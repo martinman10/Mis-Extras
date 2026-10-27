@@ -1,19 +1,28 @@
-const CACHE_NAME = 'mis-extras-v1';
-const ASSETS = ['./', './index.html', './css/style.css', './js/app.js', './manifest.json', './icons/icon-192.png', './icons/icon-512.png'];
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => Promise.allSettled(ASSETS.map(u => c.add(u)))));
+const CACHE_NAME = 'horax-yo-v1';
+const ASSETS_TO_CACHE = ['./', './index.html', './css/style.css', './js/app.js', './manifest.json', './icons/icon-192.png', './icons/icon-512.png'];
+
+// Instalación: guarda lo que pueda (si falta un archivo, no se rompe todo)
+self.addEventListener('install', event => {
+  event.waitUntil(caches.open(CACHE_NAME).then(cache => Promise.allSettled(ASSETS_TO_CACHE.map(url => cache.add(url)))));
   self.skipWaiting();
 });
-self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))));
+
+// Activación: borra las cachés viejas de ESTA app
+self.addEventListener('activate', event => {
+  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('horax-yo-') && k !== CACHE_NAME).map(k => caches.delete(k)))));
   self.clients.claim();
 });
-// Red primero: siempre trae la versión nueva; sin internet usa la copia guardada.
-self.addEventListener('fetch', e => {
-  const r = e.request;
-  if (r.method !== 'GET' || !r.url.startsWith(self.location.origin)) return;
-  e.respondWith(fetch(r, { cache: 'no-cache' }).then(res => {
-    if (res.ok) { const cl = res.clone(); caches.open(CACHE_NAME).then(c => c.put(r, cl)); }
-    return res;
-  }).catch(() => caches.match(r).then(c => c || (r.mode === 'navigate' ? caches.match('./index.html') : undefined))));
+
+// Red primero: siempre trae la versión más nueva; sin internet usa la copia guardada.
+self.addEventListener('fetch', event => {
+  const req = event.request;
+  if (req.method !== 'GET' || !req.url.startsWith(self.location.origin)) return;
+  event.respondWith(
+    fetch(req, { cache: 'no-cache' })
+      .then(response => {
+        if (response.ok) { const clone = response.clone(); caches.open(CACHE_NAME).then(cache => cache.put(req, clone)); }
+        return response;
+      })
+      .catch(() => caches.match(req).then(cached => cached || (req.mode === 'navigate' ? caches.match('./index.html') : undefined)))
+  );
 });
