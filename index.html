@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#6C63FF" />
+    <meta name="color-scheme" content="light dark" />
+    <script>try{var m=localStorage.getItem('hxyo_mode')||'auto';if(m==='dark'||(m==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
+    <meta name="description" content="HORAX · Mis extras - Mis horas extras, lo que cobro y lo que me queda" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Mis extras" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <title>HORAX · Mis extras</title>
+
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png" />
+
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" crossorigin="anonymous" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" crossorigin="anonymous" />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" /></noscript>
+
+    <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+<div id="app">
+    <!-- HEADER -->
+    <header class="app-header">
+        <div class="logo profile-chip" id="profileChip" role="button" tabindex="0" title="Ajustes">
+            <span class="hd-avatar-wrap"><span class="hd-avatar" id="profileIcon" aria-hidden="true"><i class="fas fa-clock"></i></span><span class="hd-avatar-edit" aria-hidden="true"><i class="fas fa-pen"></i></span></span>
+            <span class="logo-text">
+                <h1 id="headerTitle">Mis extras</h1>
+                <span class="logo-sub" id="headerSubtitle">HORAX · lo mío</span>
+            </span>
+        </div>
+    </header>
+
+    <div class="main-content" id="mainContent">
+
+        <!-- CALENDARIO -->
+        <div class="tab-content active" id="tabCalendar">
+            <div class="month-nav">
+                <button id="prevMonth" aria-label="Mes anterior"><i class="fas fa-chevron-left"></i></button>
+                <span class="month-label" id="monthLabel"></span>
+                <button id="nextMonth" aria-label="Mes siguiente"><i class="fas fa-chevron-right"></i></button>
+            </div>
+            <button type="button" class="today-bar" id="todayBarCal" style="display:none;"><i class="fas fa-rotate-left"></i> Volver a <strong>hoy</strong></button>
+            <div class="calendar-grid" id="calendarGrid"></div>
+            <div class="cal-legend" id="calLegend"></div>
+            <div class="day-detail" id="dayDetail">
+                <div class="day-detail-header">
+                    <h3 id="detailDayName">Seleccioná un día</h3>
+                    <span class="date-badge" id="detailDateBadge">—</span>
+                </div>
+                <div id="dayDetailContent"></div>
+                <button type="button" class="day-add-btn" id="dayAddBtn"><i class="fas fa-plus"></i> Agregar extra este día</button>
+            </div>
+        </div>
+
+        <!-- RESUMEN -->
+        <div class="tab-content" id="tabSummary">
+            <div class="month-nav period-nav" id="navSummary"></div>
+            <p class="period-sub" id="subSummary"></p>
+            <button type="button" class="today-bar" id="todayBarSum" style="display:none;"><i class="fas fa-rotate-left"></i> Volver al período <strong>actual</strong></button>
+            <div id="summaryContainer"></div>
+        </div>
+
+        <!-- AGREGAR -->
+        <div class="tab-content" id="tabAdd">
+            <div class="add-form">
+                <h2><i class="fas fa-plus-circle" style="color:var(--primary-ink);margin-right:8px;"></i>Agregar extra</h2>
+                <div class="form-group">
+                    <label for="addDate">Fecha</label>
+                    <input type="date" id="addDate" />
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="addStart">Desde</label>
+                        <input type="time" id="addStart" value="09:00" step="900" />
+                    </div>
+                    <div class="form-group">
+                        <label for="addEnd">Hasta</label>
+                        <input type="time" id="addEnd" value="12:00" step="900" />
+                    </div>
+                </div>
+                <div class="shift-chips" id="shiftChips"></div>
+                <div class="hours-preview" id="hoursPreview"></div>
+                <div class="form-group">
+                    <label for="addComment">Comentario <span class="label-opt">(opcional)</span></label>
+                    <textarea id="addComment" rows="2" placeholder="Ej: cubrí turno de..."></textarea>
+                </div>
+                <div class="pf-list">
+                    <button type="button" class="pf-row" id="addDoneToggle" role="switch" aria-checked="false">
+                        <span class="pf-row-ic"><i class="fas fa-check"></i></span>
+                        <span class="pf-row-text">
+                            <span class="pf-row-title">Ya la hice</span>
+                            <small class="pf-row-sub" id="addDoneHint">Solo las hechas suman en lo que cobrás.</small>
+                        </span>
+                        <span class="pf-switch" aria-hidden="true"></span>
+                    </button>
+                </div>
+                <button class="btn-submit" id="addSubmitBtn"><i class="fas fa-save"></i> Guardar extra</button>
+            </div>
+        </div>
+
+        <!-- PLATA -->
+        <div class="tab-content" id="tabMoney">
+            <div class="month-nav period-nav" id="navMoney"></div>
+            <p class="period-sub" id="subMoney"></p>
+            <button type="button" class="today-bar" id="todayBarMoney" style="display:none;"><i class="fas fa-rotate-left"></i> Volver al período <strong>actual</strong></button>
+            <div id="moneyContainer"></div>
+        </div>
+    </div>
+
+    <!-- BOTTOM TABS -->
+    <div class="tab-bar" id="tabBar">
+        <button class="tab-btn active" data-tab="tabCalendar"><i class="fas fa-calendar-day"></i><span>Calendario</span></button>
+        <button class="tab-btn" data-tab="tabSummary"><i class="fas fa-chart-pie"></i><span>Resumen</span><span class="tab-badge" id="summaryBadge" style="display:none;">0</span></button>
+        <button class="tab-btn" data-tab="tabAdd"><i class="fas fa-plus-circle"></i><span>Agregar</span></button>
+        <button class="tab-btn" data-tab="tabMoney"><i class="fas fa-wallet"></i><span>Plata</span></button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+</div>
+
+<!-- AJUSTES -->
+<div id="settingsModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card profile-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="pf-head">
+            <div class="pf-avatar" id="profileAvatar" aria-hidden="true"><i class="fas fa-clock"></i></div>
+            <div class="pf-head-text">
+                <h2 id="settingsTitle">Ajustes</h2>
+                <p class="pf-sub">Tus valores y cómo se ve la app.</p>
+            </div>
+        </div>
+
+        <div class="pf-body" id="settingsBody">
+            <div class="form-group pf-section">
+                <label for="setName">Tu nombre <span class="label-opt">(opcional)</span></label>
+                <input type="text" id="setName" placeholder="Ej: Martín" autocomplete="given-name" />
+            </div>
+
+            <div class="pf-section">
+                <label>Valores de tu trabajo</label>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="setRate">Valor hora extra ($)</label>
+                        <input type="text" inputmode="decimal" id="setRate" placeholder="0" />
+                    </div>
+                    <div class="form-group">
+                        <label for="setBase">Sueldo base ($)</label>
+                        <input type="text" inputmode="decimal" id="setBase" placeholder="0" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="setNight">Hora nocturna ($)</label>
+                        <input type="text" inputmode="decimal" id="setNight" placeholder="0" />
+                    </div>
+                    <div class="form-group">
+                        <label for="setWeekend">Hora fin de semana ($)</label>
+                        <input type="text" inputmode="decimal" id="setWeekend" placeholder="0" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="setGoal">Objetivo (hs por mes)</label>
+                        <input type="text" inputmode="decimal" id="setGoal" placeholder="40" />
+                    </div>
+                    <div class="form-group">
+                        <label for="setMin">Mínimo (hs por mes)</label>
+                        <input type="text" inputmode="decimal" id="setMin" placeholder="30" />
+                    </div>
+                </div>
+                <p class="field-hint">Si cambiás un valor, los meses anteriores conservan el que tenían.</p>
+            </div>
+
+            <div class="pf-section">
+                <label>Color de la app</label>
+                <div class="theme-swatches" id="themeSwatches"></div>
+            </div>
+
+            <div class="pf-section">
+                <label>Apariencia</label>
+                <div class="mode-seg" id="modeSeg">
+                    <button type="button" data-mode="auto"><i class="fas fa-circle-half-stroke"></i> Auto</button>
+                    <button type="button" data-mode="light"><i class="fas fa-sun"></i> Claro</button>
+                    <button type="button" data-mode="dark"><i class="fas fa-moon"></i> Oscuro</button>
+                </div>
+            </div>
+
+            <div class="pf-section">
+                <label>Tus datos</label>
+                <div class="pf-list">
+                    <button type="button" class="pf-row" id="backupBtn">
+                        <span class="pf-row-ic"><i class="fas fa-download"></i></span>
+                        <span class="pf-row-text">
+                            <span class="pf-row-title">Guardar copia de seguridad</span>
+                            <small class="pf-row-sub">Baja un archivo con todo lo que cargaste.</small>
+                        </span>
+                        <i class="fas fa-chevron-right pf-row-end" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" class="pf-row" id="restoreBtn">
+                        <span class="pf-row-ic"><i class="fas fa-upload"></i></span>
+                        <span class="pf-row-text">
+                            <span class="pf-row-title">Cargar una copia</span>
+                            <small class="pf-row-sub">Para pasar tus datos de un celu a otro.</small>
+                        </span>
+                        <i class="fas fa-chevron-right pf-row-end" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" class="pf-row" id="openInstallHelpBtn">
+                        <span class="pf-row-ic"><i class="fas fa-mobile-screen-button"></i></span>
+                        <span class="pf-row-text">
+                            <span class="pf-row-title">¿Cómo instalar la app?</span>
+                            <small class="pf-row-sub">Tenela en la pantalla de inicio.</small>
+                        </span>
+                        <i class="fas fa-chevron-right pf-row-end" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <input type="file" id="restoreFile" accept=".json,application/json" style="display:none;" />
+                <p class="field-hint">Tus datos se guardan solo en este dispositivo. Hacé una copia de vez en cuando.</p>
+            </div>
+
+            <details class="admin-advanced">
+                <summary>Opciones avanzadas</summary>
+                <button type="button" class="admin-advanced-link" id="wipeBtn">Borrar todos mis datos de este dispositivo</button>
+                <p class="danger-hint">Se borran las extras, gastos e ingresos y los ajustes. No se puede deshacer.</p>
+            </details>
+        </div>
+
+        <div class="pf-foot">
+            <p id="settingsError" class="login-error" style="display:none;"></p>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="settingsCancelBtn">Cancelar</button>
+                <button class="btn-submit" id="settingsSaveBtn"><i class="fas fa-check"></i> Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- EDITAR EXTRA -->
+<div id="editModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+        <h2><i class="fas fa-pen" style="color:var(--primary-ink);margin-right:8px;"></i>Editar extra</h2>
+        <div class="form-group">
+            <label for="editDate">Fecha</label>
+            <input type="date" id="editDate" />
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="editStart">Desde</label>
+                <input type="time" id="editStart" step="900" />
+            </div>
+            <div class="form-group">
+                <label for="editEnd">Hasta</label>
+                <input type="time" id="editEnd" step="900" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="editComment">Comentario <span class="label-opt">(opcional)</span></label>
+            <textarea id="editComment" rows="2" placeholder="Ej: cubrí turno de..."></textarea>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-secondary" id="editCancelBtn">Cancelar</button>
+            <button class="btn-submit" id="editSaveBtn"><i class="fas fa-save"></i> Guardar cambios</button>
+        </div>
+    </div>
+</div>
+
+<!-- AJUSTAR MES -->
+<div id="periodModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card scrolly">
+        <h2><i class="fas fa-sliders" style="color:var(--primary-ink);margin-right:8px;"></i><span id="periodModalTitle">Ajustar este mes</span></h2>
+        <p class="modal-hint">Valen solo para este período.</p>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="perGoal">Objetivo (hs)</label>
+                <input type="text" inputmode="decimal" id="perGoal" />
+            </div>
+            <div class="form-group">
+                <label for="perMin">Mínimo (hs)</label>
+                <input type="text" inputmode="decimal" id="perMin" />
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="perNight">Nocturnas (hs)</label>
+                <input type="text" inputmode="decimal" id="perNight" placeholder="0" />
+            </div>
+            <div class="form-group">
+                <label for="perWeekend">Fin de semana (hs)</label>
+                <input type="text" inputmode="decimal" id="perWeekend" placeholder="0" />
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-secondary" id="periodCancelBtn">Cancelar</button>
+            <button class="btn-submit" id="periodSaveBtn"><i class="fas fa-check"></i> Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- GASTO / INGRESO -->
+<div id="itemModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+        <h2 id="itemModalTitle">Agregar gasto</h2>
+        <div class="form-group">
+            <label for="itemName">¿Qué es?</label>
+            <input type="text" id="itemName" placeholder="Ej: Alquiler" autocomplete="off" list="itemNames" />
+            <datalist id="itemNames"></datalist>
+        </div>
+        <div class="form-group">
+            <label for="itemAmount">Valor ($)</label>
+            <input type="text" inputmode="decimal" id="itemAmount" placeholder="0" />
+        </div>
+        <p id="itemError" class="login-error" style="display:none;margin:-6px 0 12px;"></p>
+        <div class="modal-actions">
+            <button class="btn-secondary" id="itemCancelBtn">Cancelar</button>
+            <button class="btn-submit" id="itemSaveBtn"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- CONFIRMAR -->
+<div id="confirmModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card confirm-card">
+        <div class="confirm-icon" id="confirmIcon"><i class="fas fa-triangle-exclamation"></i></div>
+        <h2 id="confirmTitle">¿Estás seguro?</h2>
+        <p class="modal-hint" id="confirmMessage"></p>
+        <div class="modal-actions">
+            <button class="btn-secondary" id="confirmCancelBtn">Cancelar</button>
+            <button class="btn-submit" id="confirmOkBtn">Confirmar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Banner "Instalá la app" -->
+<div id="installBanner" class="install-banner" style="display:none;">
+    <div class="install-banner-icon"><i class="fas fa-mobile-screen-button"></i></div>
+    <div class="install-banner-text">
+        <strong>Instalá Mis extras en tu celu</strong>
+        <small>Queda como una app, sin pasar por el navegador.</small>
+    </div>
+    <button class="install-banner-cta" id="installBannerBtn">Ver cómo</button>
+    <button class="install-banner-close" id="installBannerClose" title="Ahora no"><i class="fas fa-xmark"></i></button>
+</div>
+
+<!-- Cómo instalar -->
+<div id="installModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card install-card">
+        <button type="button" class="install-x" id="installCloseBtn" aria-label="Cerrar"><i class="fas fa-xmark"></i></button>
+        <h2><i class="fas fa-mobile-screen-button" style="color:var(--primary-ink);margin-right:8px;"></i>Cómo instalar la app</h2>
+        <div class="install-tabs" id="installTabs">
+            <button class="install-tab" data-os="ios"><i class="fab fa-apple"></i> iPhone</button>
+            <button class="install-tab" data-os="android"><i class="fab fa-android"></i> Android</button>
+            <button class="install-tab" data-os="desktop"><i class="fas fa-desktop"></i> Compu</button>
+        </div>
+        <button type="button" class="btn-submit install-now" id="installNowBtn" style="display:none;"><i class="fas fa-download"></i> Instalar ahora</button>
+        <ol class="install-steps" id="installSteps"></ol>
+        <p class="install-note" id="installNote"></p>
+        <div class="modal-actions">
+            <button class="btn-secondary" id="installDoneBtn">Listo</button>
+        </div>
+    </div>
+</div>
+
+<script src="./js/app.js" defer></script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW error', err));
+        });
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,736 @@
+{
+ "app": "horax-mis-extras",
+ "version": 1,
+ "data": {
+  "settings": {
+   "name": "Martín",
+   "theme": "#6C63FF",
+   "rate": 333,
+   "base": 30842,
+   "nightRate": 35.99,
+   "weekendRate": 41.69,
+   "goal": 40,
+   "min": 30
+  },
+  "entries": [
+   {
+    "id": 1,
+    "date": "2026-10-29",
+    "start": "10:00",
+    "end": "12:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 2,
+    "date": "2026-10-31",
+    "start": "12:00",
+    "end": "18:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 3,
+    "date": "2026-11-07",
+    "start": "12:00",
+    "end": "18:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 4,
+    "date": "2026-11-14",
+    "start": "12:00",
+    "end": "18:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 5,
+    "date": "2026-10-28",
+    "start": "09:00",
+    "end": "12:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 6,
+    "date": "2026-09-26",
+    "start": "09:00",
+    "end": "12:00",
+    "done": true,
+    "comment": "Sin fecha en el Excel: poné el día real"
+   },
+   {
+    "id": 7,
+    "date": "2026-09-26",
+    "start": "09:00",
+    "end": "12:00",
+    "done": true,
+    "comment": "Sin fecha en el Excel: poné el día real"
+   },
+   {
+    "id": 8,
+    "date": "2026-10-08",
+    "start": "18:00",
+    "end": "19:30",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 9,
+    "date": "2026-10-05",
+    "start": "09:00",
+    "end": "12:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 10,
+    "date": "2026-10-07",
+    "start": "09:00",
+    "end": "12:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 11,
+    "date": "2026-10-13",
+    "start": "09:00",
+    "end": "12:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 12,
+    "date": "2026-10-15",
+    "start": "18:00",
+    "end": "21:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 13,
+    "date": "2026-10-20",
+    "start": "09:00",
+    "end": "12:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 14,
+    "date": "2026-10-21",
+    "start": "09:00",
+    "end": "12:00",
+    "done": true,
+    "comment": ""
+   },
+   {
+    "id": 15,
+    "date": "2026-10-22",
+    "start": "09:00",
+    "end": "12:00",
+    "done": true,
+    "comment": ""
+   }
+  ],
+  "periods": {
+   "2026-12": {
+    "goal": 40.0,
+    "min": 30.0,
+    "night": 0.0,
+    "weekend": 0.0,
+    "expenses": [
+     {
+      "id": 1,
+      "name": "ALQUILER",
+      "amount": 11500.0,
+      "paid": false
+     },
+     {
+      "id": 2,
+      "name": "GASTOS COMUNES",
+      "amount": 1850.0,
+      "paid": false
+     },
+     {
+      "id": 3,
+      "name": "WIFI",
+      "amount": 866.0,
+      "paid": false
+     },
+     {
+      "id": 4,
+      "name": "LUZ",
+      "amount": 1553.0,
+      "paid": false
+     },
+     {
+      "id": 5,
+      "name": "CELU 16 de 18",
+      "amount": 4198.0,
+      "paid": false
+     },
+     {
+      "id": 6,
+      "name": "Passcard",
+      "amount": 5700.0,
+      "paid": false
+     },
+     {
+      "id": 7,
+      "name": "PS5 7 de 10",
+      "amount": 4600.0,
+      "paid": false
+     },
+     {
+      "id": 8,
+      "name": "PILAR PRESTAMO 3 de 12",
+      "amount": 2500.0,
+      "paid": false
+     },
+     {
+      "id": 9,
+      "name": "Billetera Virtual 3 de 5",
+      "amount": 900.0,
+      "paid": false
+     },
+     {
+      "id": 10,
+      "name": "Tributos",
+      "amount": 824.0,
+      "paid": false
+     },
+     {
+      "id": 11,
+      "name": "ADELANTO",
+      "amount": 4000.0,
+      "paid": false
+     }
+    ],
+    "incomes": [
+     {
+      "id": 1,
+      "name": "MAMA",
+      "amount": 0.0
+     },
+     {
+      "id": 2,
+      "name": "ADELANTO",
+      "amount": 0.0
+     },
+     {
+      "id": 3,
+      "name": "AGUINALDO",
+      "amount": 18000.0
+     }
+    ]
+   },
+   "2026-11": {
+    "goal": 40.0,
+    "min": 28.0,
+    "night": 0.0,
+    "weekend": 0.0,
+    "rate": 333,
+    "base": 30842,
+    "nightRate": 35.99,
+    "weekendRate": 41.69,
+    "expenses": [
+     {
+      "id": 1,
+      "name": "ALQUILER",
+      "amount": 11500.0,
+      "paid": false
+     },
+     {
+      "id": 2,
+      "name": "GASTOS COMUNES",
+      "amount": 1850.0,
+      "paid": false
+     },
+     {
+      "id": 3,
+      "name": "WIFI",
+      "amount": 866.0,
+      "paid": false
+     },
+     {
+      "id": 4,
+      "name": "LUZ",
+      "amount": 1553.0,
+      "paid": false
+     },
+     {
+      "id": 5,
+      "name": "CELU 15 de 18",
+      "amount": 4198.0,
+      "paid": false
+     },
+     {
+      "id": 6,
+      "name": "Passcard",
+      "amount": 5700.0,
+      "paid": false
+     },
+     {
+      "id": 7,
+      "name": "PS5 6 de 10",
+      "amount": 4483.0,
+      "paid": false
+     },
+     {
+      "id": 8,
+      "name": "PILAR PRESTAMO 2 de 12",
+      "amount": 2500.0,
+      "paid": false
+     },
+     {
+      "id": 9,
+      "name": "CASH 18 de 18",
+      "amount": 2700.0,
+      "paid": false
+     },
+     {
+      "id": 10,
+      "name": "Billetera Virtual",
+      "amount": 900.0,
+      "paid": false
+     },
+     {
+      "id": 11,
+      "name": "FUTBOL",
+      "amount": 1000.0,
+      "paid": false
+     },
+     {
+      "id": 12,
+      "name": "Adelanto",
+      "amount": 6000.0,
+      "paid": false
+     }
+    ],
+    "incomes": [
+     {
+      "id": 1,
+      "name": "MAMA",
+      "amount": 0.0
+     },
+     {
+      "id": 2,
+      "name": "ADELANTO",
+      "amount": 4000.0
+     }
+    ]
+   },
+   "2026-10": {
+    "goal": 40.0,
+    "min": 12.0,
+    "night": 0.0,
+    "weekend": 0.0,
+    "rate": 333,
+    "base": 30842,
+    "nightRate": 35.99,
+    "weekendRate": 41.69,
+    "expenses": [
+     {
+      "id": 1,
+      "name": "ALQUILER",
+      "amount": 11500.0,
+      "paid": false
+     },
+     {
+      "id": 2,
+      "name": "GASTOS COMUNES",
+      "amount": 1850.0,
+      "paid": false
+     },
+     {
+      "id": 3,
+      "name": "WIFI",
+      "amount": 866.0,
+      "paid": false
+     },
+     {
+      "id": 4,
+      "name": "LUZ",
+      "amount": 1553.0,
+      "paid": false
+     },
+     {
+      "id": 5,
+      "name": "CELU 14 de 18",
+      "amount": 4008.0,
+      "paid": false
+     },
+     {
+      "id": 6,
+      "name": "Passcard",
+      "amount": 5700.0,
+      "paid": false
+     },
+     {
+      "id": 7,
+      "name": "PS5 5 de 10",
+      "amount": 4483.0,
+      "paid": false
+     },
+     {
+      "id": 8,
+      "name": "PILAR PRESTAMO",
+      "amount": 2000.0,
+      "paid": false
+     },
+     {
+      "id": 9,
+      "name": "CASH 17 de 18",
+      "amount": 2700.0,
+      "paid": false
+     },
+     {
+      "id": 10,
+      "name": "Billetera Virtual",
+      "amount": 900.0,
+      "paid": false
+     },
+     {
+      "id": 11,
+      "name": "FUTBOL",
+      "amount": 1000.0,
+      "paid": false
+     },
+     {
+      "id": 12,
+      "name": "Adelanto",
+      "amount": 3000.0,
+      "paid": false
+     },
+     {
+      "id": 13,
+      "name": "Tributos",
+      "amount": 824.0,
+      "paid": false
+     }
+    ],
+    "incomes": [
+     {
+      "id": 1,
+      "name": "MAMA",
+      "amount": 4000.0
+     },
+     {
+      "id": 2,
+      "name": "ADELANTO",
+      "amount": 6000.0
+     }
+    ]
+   },
+   "2027-01": {
+    "goal": 40.0,
+    "min": 30.0,
+    "night": 0.0,
+    "weekend": 0.0,
+    "expenses": [
+     {
+      "id": 1,
+      "name": "ALQUILER",
+      "amount": 11500.0,
+      "paid": false
+     },
+     {
+      "id": 2,
+      "name": "GASTOS COMUNES",
+      "amount": 1850.0,
+      "paid": false
+     },
+     {
+      "id": 3,
+      "name": "WIFI",
+      "amount": 866.0,
+      "paid": false
+     },
+     {
+      "id": 4,
+      "name": "LUZ",
+      "amount": 1553.0,
+      "paid": false
+     },
+     {
+      "id": 5,
+      "name": "CELU 17 de 18",
+      "amount": 610.0,
+      "paid": false
+     },
+     {
+      "id": 6,
+      "name": "Passcard",
+      "amount": 5700.0,
+      "paid": false
+     },
+     {
+      "id": 7,
+      "name": "PS5 8 de 10",
+      "amount": 4600.0,
+      "paid": false
+     },
+     {
+      "id": 8,
+      "name": "PILAR PRESTAMO 4 de 12",
+      "amount": 2500.0,
+      "paid": false
+     },
+     {
+      "id": 9,
+      "name": "Billetera Virtual 4 de 5",
+      "amount": 900.0,
+      "paid": false
+     },
+     {
+      "id": 10,
+      "name": "ADELANTO",
+      "amount": 0.0,
+      "paid": false
+     }
+    ],
+    "incomes": [
+     {
+      "id": 1,
+      "name": "MAMA",
+      "amount": 0.0
+     },
+     {
+      "id": 2,
+      "name": "ADELANTO",
+      "amount": 0.0
+     }
+    ]
+   },
+   "2027-02": {
+    "goal": 40.0,
+    "min": 30.0,
+    "night": 0.0,
+    "weekend": 0.0,
+    "expenses": [
+     {
+      "id": 1,
+      "name": "ALQUILER",
+      "amount": 11500.0,
+      "paid": false
+     },
+     {
+      "id": 2,
+      "name": "GASTOS COMUNES",
+      "amount": 1850.0,
+      "paid": false
+     },
+     {
+      "id": 3,
+      "name": "WIFI",
+      "amount": 866.0,
+      "paid": false
+     },
+     {
+      "id": 4,
+      "name": "LUZ",
+      "amount": 1553.0,
+      "paid": false
+     },
+     {
+      "id": 5,
+      "name": "CELU 18 de 18",
+      "amount": 610.0,
+      "paid": false
+     },
+     {
+      "id": 6,
+      "name": "Passcard",
+      "amount": 5700.0,
+      "paid": false
+     },
+     {
+      "id": 7,
+      "name": "PS5 9 de 10",
+      "amount": 4600.0,
+      "paid": false
+     },
+     {
+      "id": 8,
+      "name": "PILAR PRESTAMO 5 de 12",
+      "amount": 2500.0,
+      "paid": false
+     },
+     {
+      "id": 9,
+      "name": "Billetera Virtual 5 de 5",
+      "amount": 900.0,
+      "paid": false
+     },
+     {
+      "id": 10,
+      "name": "Tributos",
+      "amount": 824.0,
+      "paid": false
+     },
+     {
+      "id": 11,
+      "name": "ADELANTO",
+      "amount": 0.0,
+      "paid": false
+     }
+    ],
+    "incomes": [
+     {
+      "id": 1,
+      "name": "MAMA",
+      "amount": 0.0
+     },
+     {
+      "id": 2,
+      "name": "ADELANTO",
+      "amount": 0.0
+     },
+     {
+      "id": 3,
+      "name": "Licencia",
+      "amount": 12000.0
+     }
+    ]
+   },
+   "2027-03": {
+    "goal": 40.0,
+    "min": 30.0,
+    "night": 0.0,
+    "weekend": 0.0,
+    "expenses": [
+     {
+      "id": 1,
+      "name": "ALQUILER",
+      "amount": 11500.0,
+      "paid": false
+     },
+     {
+      "id": 2,
+      "name": "GASTOS COMUNES",
+      "amount": 1850.0,
+      "paid": false
+     },
+     {
+      "id": 3,
+      "name": "WIFI",
+      "amount": 866.0,
+      "paid": false
+     },
+     {
+      "id": 4,
+      "name": "LUZ",
+      "amount": 1553.0,
+      "paid": false
+     },
+     {
+      "id": 5,
+      "name": "Passcard",
+      "amount": 5700.0,
+      "paid": false
+     },
+     {
+      "id": 6,
+      "name": "PS5 10 de 10",
+      "amount": 4600.0,
+      "paid": false
+     },
+     {
+      "id": 7,
+      "name": "PILAR PRESTAMO 6 de 12",
+      "amount": 2500.0,
+      "paid": false
+     },
+     {
+      "id": 8,
+      "name": "ADELANTO",
+      "amount": 1000.0,
+      "paid": false
+     },
+     {
+      "id": 9,
+      "name": "Contrato Antel Movil",
+      "amount": 610.0,
+      "paid": false
+     }
+    ],
+    "incomes": [
+     {
+      "id": 1,
+      "name": "MAMA",
+      "amount": 0.0
+     },
+     {
+      "id": 2,
+      "name": "ADELANTO",
+      "amount": 0.0
+     }
+    ]
+   },
+   "2027-04": {
+    "goal": 40.0,
+    "min": 30.0,
+    "night": 0.0,
+    "weekend": 0.0,
+    "expenses": [
+     {
+      "id": 1,
+      "name": "ALQUILER",
+      "amount": 11500.0,
+      "paid": false
+     },
+     {
+      "id": 2,
+      "name": "GASTOS COMUNES",
+      "amount": 1850.0,
+      "paid": false
+     },
+     {
+      "id": 3,
+      "name": "WIFI",
+      "amount": 866.0,
+      "paid": false
+     },
+     {
+      "id": 4,
+      "name": "LUZ",
+      "amount": 1553.0,
+      "paid": false
+     },
+     {
+      "id": 5,
+      "name": "Passcard",
+      "amount": 5700.0,
+      "paid": false
+     },
+     {
+      "id": 6,
+      "name": "PILAR PRESTAMO 7 de 12",
+      "amount": 2500.0,
+      "paid": false
+     },
+     {
+      "id": 7,
+      "name": "Tributos",
+      "amount": 824.0,
+      "paid": false
+     }
+    ],
+    "incomes": [
+     {
+      "id": 1,
+      "name": "MAMA",
+      "amount": 0.0
+     },
+     {
+      "id": 2,
+      "name": "ADELANTO",
+      "amount": 0.0
+     }
+    ]
+   }
+  }
+ }
+}
