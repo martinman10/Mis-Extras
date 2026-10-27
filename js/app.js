@@ -1,90 +1,1102 @@
-var KEY='mis_extras_v1',MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'],S,cur,tab='ca';
-var Q=function(s){return document.querySelector(s)};
-var mo=function(n){return '$ '+Math.round(n).toLocaleString('es-UY')};
-var fh=function(n){return String(Math.round(n*100)/100).replace('.',',')+' h'};
-var esc=function(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
-var num=function(v){return parseFloat(String(v).replace(',','.'))||0};
-var tm=function(s){var a=s.split(':');return +a[0]+ +a[1]/60};
-var hrs=function(e){var a=tm(e.f),b=tm(e.t);return (b<a?b+24:b)-a};
-var dl=function(d){return new Date(d+'T12:00').toLocaleDateString('es-UY',{weekday:'short',day:'numeric',month:'short'})};
-function seed(){
- var t=function(x){var h=Math.floor(x),m=Math.round((x-h)*60);return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')};
- var E=function(a){return a.map(function(r){return {d:r[0],f:t(r[1]),t:t(r[2]),ok:1}})};
- var G=function(a){return a.map(function(r){return {n:r[0],v:r[1],p:0}})};
- var fx=[['ALQUILER',11500],['GASTOS COMUNES',1850],['WIFI',866],['LUZ',1553]];
- return {cfg:{rate:333,base:30842,nrate:35.99,frate:41.69},cur:'2026-12',m:{
- '2026-10':{ex:[],ga:G(fx.concat([['CELU 14 de 18',4008],['Passcard',5700],['PS5 5 de 10',4483],['PILAR PRESTAMO',2000],['CASH 17 de 18',2700],['Billetera Virtual',900],['FUTBOL',1000],['Adelanto',3000],['Tributos',824]])),in:[{n:'MAMA',v:4000},{n:'ADELANTO',v:6000}],obj:40,min:12,noc:0,fin:0},
- '2026-11':{ex:E([['',9,12],['',9,12],['2026-10-08',18,19.5],['2026-10-05',9,12],['2026-10-07',9,12],['2026-10-13',9,12],['2026-10-15',18,21],['2026-10-20',9,12],['2026-10-21',9,12],['2026-10-22',9,12]]),ga:G(fx.concat([['CELU 15 de 18',4198],['Passcard',5700],['PS5 6 de 10',4483],['PILAR PRESTAMO 2 de 12',2500],['CASH 18 de 18',2700],['Billetera Virtual',900],['FUTBOL',1000],['Adelanto',6000]])),in:[{n:'MAMA',v:0},{n:'ADELANTO',v:4000}],obj:40,min:28,noc:0,fin:0},
- '2026-12':{ex:E([['2026-10-28',9,12],['2026-10-29',10,12],['2026-10-31',12,18],['2026-11-07',12,18],['2026-11-14',12,18]]),ga:G(fx.concat([['CELU 16 de 18',4198],['Passcard',5700],['PS5 7 de 10',4600],['PILAR PRESTAMO 3 de 12',2500],['Billetera Virtual 3 de 5',900],['Tributos',824],['ADELANTO',4000]])),in:[{n:'MAMA',v:0},{n:'ADELANTO',v:0},{n:'AGUINALDO',v:18000}],obj:40,min:30,noc:0,fin:0}}};
+// ============================================================
+//  HORAX · Mis extras
+//  Versión personal (una sola persona). Los datos se guardan en este dispositivo.
+// ============================================================
+const STORAGE_KEY = 'hxyo_data_v1';
+const MODE_KEY = 'hxyo_mode';
+const THEME_KEY = 'hxyo_theme';
+const INSTALL_KEY = 'hxyo_install_dismissed';
+const CIERRE_DIA = 25; // el período cierra el 25: va del 26 del mes anterior al 25, y se cobra el mes siguiente al cierre
+
+const DEFAULT_SETTINGS = {
+    name: '', theme: '#6C63FF',
+    rate: 0,        // valor de cada hora extra
+    base: 0,        // sueldo base
+    nightRate: 0,   // valor de cada hora nocturna
+    weekendRate: 0, // valor de cada hora de fin de semana
+    goal: 40,       // objetivo de horas por período
+    min: 30         // mínimo de horas por período
+};
+const FROZEN_FIELDS = ['rate', 'base', 'nightRate', 'weekendRate'];
+
+// ============================================================
+//  APARIENCIA (color + claro/oscuro)
+// ============================================================
+const THEME_DEFAULT = '#6C63FF';
+const THEME_COLORS = [
+    { hex: '#6C63FF', name: 'Violeta' },
+    { hex: '#FFF486', name: 'Amarillo' },
+    { hex: '#F01D79', name: 'Fucsia' },
+    { hex: '#FEC3E1', name: 'Rosa' },
+    { hex: '#DAC2FE', name: 'Lila' },
+    { hex: '#4CE5CF', name: 'Turquesa' }
+];
+function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function rgbToHex(c) { return '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase(); }
+function mixRgb(a, b, t) { return a.map((v, i) => v + (b[i] - v) * t); }
+function relLum(c) {
+    const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
 }
-function load(){try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}if(!S)S=seed();cur=S.cur||'2026-12'}
-function save(){S.cur=cur;try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
-function M(key){key=key||cur;var m=S.m[key];if(!m){var ks=Object.keys(S.m).filter(function(x){return x<key}).sort(),p=S.m[ks[ks.length-1]];m=S.m[key]={ex:[],ga:p?p.ga.map(function(g){return {n:g.n,v:g.v,p:0}}):[],in:[],obj:p?p.obj:40,min:p?p.min:30,noc:0,fin:0}}return m}
-function payKey(d){var p=d.split('-').map(Number),y=p[0],m=p[1]+(p[2]>25?2:1);while(m>12){m-=12;y++}return y+'-'+String(m).padStart(2,'0')}
-function sum(a,f){return a.reduce(function(s,x){return s+f(x)},0)}
-function calc(m){var c=S.cfg,o={};o.h=sum(m.ex,hrs);o.hd=sum(m.ex.filter(function(e){return e.ok}),hrs);o.vd=o.hd*c.rate;o.total=c.base+o.vd;o.bruto=o.total+m.noc*c.nrate+m.fin*c.frate;o.g=sum(m.ga,function(x){return x.v});o.gp=sum(m.ga.filter(function(x){return !x.p}),function(x){return x.v});o.i=sum(m.in,function(x){return x.v});o.left=o.bruto+o.i-o.g;o.cons=o.bruto+o.i>0?o.g/(o.bruto+o.i):0;return o}
-function nav(d){if(tab==='ca')cmv(d);else mv(d)}
-function mv(d){var p=cur.split('-').map(Number),y=p[0],m=p[1]+d;if(m>12){m=1;y++}if(m<1){m=12;y--}cur=y+'-'+String(m).padStart(2,'0');save();render()}
-function go(t){tab=t;render()}
-function toast(s){var t=Q('#toast');t.textContent=s;t.style.display='block';setTimeout(function(){t.style.display='none'},2200)}
-function closeSh(){Q('#sh').classList.remove('on')}
-function sheet(title,fields,onSave,onDel){
- Q('#sh').innerHTML='<div class="bk" onclick="closeSh()"></div><div class="pn"><h3>'+title+'</h3>'+fields.map(function(f){return '<label>'+f.l+'<input id="f_'+f.k+'" type="'+f.t+'" value="'+esc(f.v==null?'':f.v)+'"'+(f.t==='number'?' inputmode="decimal" step="any"':'')+'></label>'}).join('')+'<div class="row">'+(onDel?'<button class="b2" id="fdel">Borrar</button>':'')+'<button class="b1" id="fok">Guardar</button></div></div>';
- Q('#sh').classList.add('on');
- Q('#fok').onclick=function(){var o={};fields.forEach(function(f){o[f.k]=Q('#f_'+f.k).value});onSave(o);save();closeSh();render()};
- if(onDel)Q('#fdel').onclick=function(){onDel();save();closeSh();render()};
+function contrastRatio(l1, l2) { return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); }
+function onColorFor(hex) { return contrastRatio(relLum(hexToRgb(hex)), 1) >= 4.0 ? '#FFFFFF' : '#1A1A2E'; }
+
+const DARK_CARD = [28, 29, 42];
+function getModePref() { try { return localStorage.getItem(MODE_KEY) || 'auto'; } catch (_) { return 'auto'; } }
+function isDarkNow() {
+    const m = getModePref();
+    if (m === 'dark') return true;
+    if (m === 'light') return false;
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
 }
-function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
-function exFields(e){return [{k:'d',l:'Fecha',t:'date',v:e.d},{k:'f',l:'Desde',t:'time',v:e.f},{k:'t',l:'Hasta',t:'time',v:e.t}]}
-function ad(d0){sheet('Nueva extra',exFields({d:d0||today(),f:'09:00',t:'12:00'}),function(o){var d=o.d||today(),k=payKey(d);M(k).ex.push({d:d,f:o.f||'09:00',t:o.t||'12:00',ok:0});if(tab==='ex')cur=k})}
-function ed(i,k){var m=M(k),e=m.ex[i];sheet('Editar extra',exFields(e),function(o){e.d=o.d;e.f=o.f||e.f;e.t=o.t||e.t},function(){m.ex.splice(i,1)})}
-function tg(i,k){var e=M(k).ex[i];e.ok=e.ok?0:1;save();render()}
-function pg(i){var g=M().ga[i];g.p=g.p?0:1;save();render()}
-function eg(k,i){var m=M(),a=m[k],x=i<0?{n:'',v:''}:a[i];sheet(i<0?(k==='ga'?'Nuevo gasto':'Nuevo ingreso'):'Editar',[{k:'n',l:'Concepto',t:'text',v:x.n},{k:'v',l:'Valor en $',t:'number',v:x.v}],function(o){if(i<0)a.push({n:o.n,v:num(o.v),p:0});else{x.n=o.n;x.v=num(o.v)}},i<0?null:function(){a.splice(i,1)})}
-function eh(){var m=M();sheet('Horas extra de pago',[{k:'noc',l:'Horas nocturnas',t:'number',v:m.noc},{k:'fin',l:'Horas de fin de semana',t:'number',v:m.fin}],function(o){m.noc=num(o.noc);m.fin=num(o.fin)})}
-function cf(){var m=M(),c=S.cfg;sheet('Valores',[{k:'rate',l:'Valor por hora extra ($)',t:'number',v:c.rate},{k:'base',l:'Sueldo base ($)',t:'number',v:c.base},{k:'nrate',l:'Valor hora nocturna ($)',t:'number',v:c.nrate},{k:'frate',l:'Valor hora fin de semana ($)',t:'number',v:c.frate},{k:'obj',l:'Objetivo de este mes (horas)',t:'number',v:m.obj},{k:'min',l:'Mínimo de este mes (horas)',t:'number',v:m.min}],function(o){c.rate=num(o.rate);c.base=num(o.base);c.nrate=num(o.nrate);c.frate=num(o.frate);m.obj=num(o.obj)||1;m.min=num(o.min)})}
-function bk(){navigator.clipboard.writeText(JSON.stringify(S)).then(function(){toast('Respaldo copiado')}).catch(function(){toast('No se pudo copiar')})}
-function rs(){sheet('Restaurar respaldo',[{k:'j',l:'Pegá acá el respaldo copiado',t:'text',v:''}],function(o){try{var j=JSON.parse(o.j);if(j&&j.m&&j.cfg){S=j;cur=S.cur||cur;toast('Respaldo restaurado')}else toast('Respaldo inválido')}catch(e){toast('Respaldo inválido')}})}
-var calY=new Date().getFullYear(),calM=new Date().getMonth(),selD=today();
-function allEx(){var r=[];Object.keys(S.m).forEach(function(k){S.m[k].ex.forEach(function(e,i){if(e.d)r.push({k:k,i:i,e:e})})});return r}
-function cmv(d){calM+=d;if(calM>11){calM=0;calY++}if(calM<0){calM=11;calY--}render()}
-function vCa(){
- var by={};allEx().forEach(function(r){(by[r.e.d]=by[r.e.d]||[]).push(r)});
- var off=(new Date(calY,calM,1).getDay()+6)%7,n=new Date(calY,calM+1,0).getDate(),g='';
- ['L','M','M','J','V','S','D'].forEach(function(x){g+='<i class="dn0">'+x+'</i>'});
- for(var i=0;i<off;i++)g+='<span></span>';
- for(var d=1;d<=n;d++){var ds=calY+'-'+String(calM+1).padStart(2,'0')+'-'+String(d).padStart(2,'0'),l=by[ds]||[],st=l.length?(l.every(function(r){return r.e.ok})?' ok':' pe'):'';
-  g+='<button class="dc'+st+(ds===today()?' td':'')+(ds===selD?' sl':'')+'" onclick="selD=\''+ds+'\';render()">'+d+'</button>'}
- var L=by[selD]||[],hh=sum(L,function(r){return hrs(r.e)});
- var rows=L.map(function(r){var e=r.e,h=hrs(e);return '<div class="rw'+(e.ok?' dn':'')+'"><button class="ck" onclick="tg('+r.i+',\''+r.k+'\')">'+(e.ok?'✓':'')+'</button><div class="gr" onclick="ed('+r.i+',\''+r.k+'\')"><b>'+e.f+' – '+e.t+'</b><small>Se cobra en '+MES[+r.k.slice(5)-1]+'</small></div><div class="rt"><b>'+fh(h)+'</b><small>'+mo(h*S.cfg.rate)+'</small></div></div>'}).join('')||'<p class="em">Sin extras este día.</p>';
- return '<div class="cal">'+g+'</div><div class="chips"><span><b style="color:var(--ac)">■</b> Hecha</span><span><b style="color:var(--am)">▢</b> Pendiente</span></div><h3 class="sec">'+dl(selD)+(L.length?' · '+fh(hh):'')+'<button onclick="ad(selD)">+ Agregar</button></h3>'+rows;
+let lastThemeHex = THEME_DEFAULT;
+function applyAppearance() {
+    document.documentElement.setAttribute('data-theme', isDarkNow() ? 'dark' : 'light');
+    applyTheme(lastThemeHex);
 }
-function csv(){var m=M(),r=['Fecha;Desde;Hasta;Horas;Valor;Hecha'];m.ex.forEach(function(e){r.push([e.d,e.f,e.t,hrs(e),hrs(e)*S.cfg.rate,e.ok?'Sí':'No'].join(';'))});var a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+r.join('\n')],{type:'text/csv'}));a.download='extras-'+cur+'.csv';a.click()}
-function ap(){var c='auto';try{c=localStorage.getItem('mx_th')||'auto'}catch(e){}if(c==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',c)}
-function th(){var o=['auto','light','dark'],c='auto';try{c=localStorage.getItem('mx_th')||'auto';localStorage.setItem('mx_th',o[(o.indexOf(c)+1)%3])}catch(e){}ap();render()}
-function vEx(m,c){
- var pct=Math.min(100,c.h/m.obj*100),mp=Math.min(100,m.min/m.obj*100),fal=Math.max(0,m.obj-c.h);
- var rows=m.ex.map(function(e,i){return {e:e,i:i}}).sort(function(a,b){return (a.e.d||'9')>(b.e.d||'9')?1:-1}).map(function(r){var e=r.e,h=hrs(e);return '<div class="rw'+(e.ok?' dn':'')+'"><button class="ck" onclick="tg('+r.i+')" aria-label="Marcar hecha">'+(e.ok?'✓':'')+'</button><div class="gr" onclick="ed('+r.i+')"><b>'+(e.d?dl(e.d):'Sin fecha')+'</b><small>'+e.f+' – '+e.t+'</small></div><div class="rt"><b>'+fh(h)+'</b><small>'+mo(h*S.cfg.rate)+'</small></div></div>'}).join('')||'<p class="em">Todavía no cargaste extras este mes.</p>';
- return '<section class="hero"><small>A cobrar en '+MES[+cur.slice(5)-1]+'</small><h2>'+mo(c.total)+'</h2><p>Sueldo base + '+mo(c.vd)+' de extras hechas</p><div class="bar"><i style="width:'+pct+'%"></i><u style="left:'+mp+'%"></u></div><div class="bl"><span>'+fh(c.h)+' de '+fh(m.obj)+'</span><span>'+(fal?'Faltan '+fh(fal):'Objetivo cumplido')+'</span></div></section>'
- +'<div class="chips"><span>Hechas <b>'+fh(c.hd)+'</b></span><span>Mínimo <b>'+fh(m.min)+'</b>'+(c.h>=m.min?' ✓':'')+'</span>'+(fal?'<span>≈ <b>'+Math.ceil(fal/3)+'</b> días de 3 h · <b>'+Math.ceil(fal/6)+'</b> de 6 h</span>':'')+'</div>'
- +'<h3 class="sec">Extras del mes</h3>'+rows;
+function setModePref(m) {
+    try { localStorage.setItem(MODE_KEY, m); } catch (_) {}
+    applyAppearance();
+    renderModeSeg();
 }
-function vPl(m,c){
- var L=function(k){return m[k].map(function(x,i){return '<div class="rw">'+(k==='ga'?'<button class="ck'+(x.p?' on':'')+'" onclick="pg('+i+')" aria-label="Marcar pagado">'+(x.p?'✓':'')+'</button>':'')+'<div class="gr" onclick="eg(\''+k+'\','+i+')"><b>'+esc(x.n||'Sin nombre')+'</b></div><div class="rt"><b>'+mo(x.v)+'</b></div></div>'}).join('')||'<p class="em">Vacío</p>'};
- var col=c.cons>.6?'var(--bad)':c.cons>=.4?'var(--am)':'var(--ac)';
- return '<div class="card"><div class="kv"><span>Sueldo base</span><b>'+mo(S.cfg.base)+'</b></div><div class="kv"><span>Extras hechas ('+fh(c.hd)+')</span><b>'+mo(c.vd)+'</b></div><div class="kv tap" onclick="eh()"><span>Nocturnas ('+fh(m.noc)+')</span><b>'+mo(m.noc*S.cfg.nrate)+'</b></div><div class="kv tap" onclick="eh()"><span>Fin de semana ('+fh(m.fin)+')</span><b>'+mo(m.fin*S.cfg.frate)+'</b></div><div class="kv t"><span>Total del mes</span><b>'+mo(c.bruto)+'</b></div></div>'
- +'<div class="big"><div><small>Me quedan</small><h2 style="color:'+(c.left<0?'var(--bad)':'var(--ink)')+'">'+mo(c.left)+'</h2></div><small>Consumo '+Math.round(c.cons*100)+'%</small></div><div class="mb"><i style="width:'+Math.min(100,c.cons*100)+'%;background:'+col+'"></i></div>'
- +'<h3 class="sec">Ingresos · '+mo(c.i)+'<button onclick="eg(\'in\',-1)">+ Agregar</button></h3>'+L('in')
- +'<h3 class="sec">Gastos · '+mo(c.g)+'<button onclick="eg(\'ga\',-1)">+ Agregar</button></h3>'+L('ga')
- +'<p class="em">Por pagar todavía: <b>'+mo(c.gp)+'</b></p>';
+function renderModeSeg() {
+    const seg = document.getElementById('modeSeg');
+    if (!seg) return;
+    const cur = getModePref();
+    seg.querySelectorAll('button').forEach(b => b.classList.toggle('sel', b.dataset.mode === cur));
 }
-function vAj(){var c=S.cfg;return '<div class="card"><div class="kv"><span>Valor por hora extra</span><b>'+mo(c.rate)+'</b></div><div class="kv"><span>Sueldo base</span><b>'+mo(c.base)+'</b></div><div class="kv"><span>Hora nocturna</span><b>'+mo(c.nrate)+'</b></div><div class="kv"><span>Hora fin de semana</span><b>'+mo(c.frate)+'</b></div><div class="kv"><span>Objetivo / mínimo del mes</span><b>'+fh(M().obj)+' / '+fh(M().min)+'</b></div></div><button class="b1" onclick="cf()">Editar valores</button><h3 class="sec">Respaldo</h3><p class="em" style="padding-top:0;text-align:left">Tus datos se guardan en este navegador. Copiá un respaldo de vez en cuando para no perderlos.</p><button class="b2" onclick="bk()">Copiar respaldo</button><button class="b2" onclick="rs()">Restaurar respaldo</button><button class="b2" onclick="csv()">Exportar mes a CSV</button><button class="b2" onclick="th()">Tema: '+(localStorage.getItem("mx_th")||"auto")+'</button>'}
-function render(){
- var m=M(),c=calc(m);
- var ca=tab==='ca';Q('#ml').textContent=ca?MES[calM]:MES[+cur.slice(5)-1];Q('#my').textContent=ca?calY:cur.slice(0,4);
- Q('#v').innerHTML=tab==='ca'?vCa():tab==='ex'?vEx(m,c):tab==='pl'?vPl(m,c):vAj();
- document.querySelectorAll('nav button').forEach(function(b){b.classList.toggle('on',b.dataset.t===tab)});
- Q('#fab').style.display=(tab==='ex'||tab==='ca')?'flex':'none';
+try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (getModePref() === 'auto') applyAppearance(); });
+} catch (_) {}
+
+function applyTheme(hex) {
+    const found = THEME_COLORS.find(c => c.hex.toLowerCase() === String(hex || '').toLowerCase());
+    hex = found ? found.hex : THEME_DEFAULT;
+    lastThemeHex = hex;
+    const dark = isDarkNow();
+    const rgb = hexToRgb(hex);
+    const BLACK = [0, 0, 0], WHITE = [255, 255, 255];
+    let ink = rgb, bg;
+    if (dark) {
+        const cardLum = relLum(DARK_CARD);
+        for (let i = 1; i <= 20 && contrastRatio(relLum(ink), cardLum) < 4.5; i++) ink = mixRgb(rgb, WHITE, i * 0.05);
+        bg = mixRgb(DARK_CARD, rgb, 0.22);
+    } else {
+        for (let i = 1; i <= 20 && contrastRatio(relLum(ink), 1) < 4.2; i++) ink = mixRgb(rgb, BLACK, i * 0.05);
+        bg = mixRgb(rgb, WHITE, relLum(rgb) > 0.5 ? 0.6 : 0.88);
+    }
+    const st = document.documentElement.style;
+    st.setProperty('--primary', hex);
+    st.setProperty('--primary-rgb', rgb.join(', '));
+    st.setProperty('--primary-dark', rgbToHex(mixRgb(rgb, BLACK, 0.15)));
+    st.setProperty('--primary-light', rgbToHex(mixRgb(rgb, WHITE, 0.2)));
+    st.setProperty('--primary-bg', rgbToHex(bg));
+    st.setProperty('--primary-ink', rgbToHex(ink));
+    st.setProperty('--primary-ink-light', rgbToHex(mixRgb(ink, WHITE, 0.25)));
+    st.setProperty('--on-primary', onColorFor(hex));
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', dark ? '#12131C' : hex);
+    try { localStorage.setItem(THEME_KEY, hex); } catch (_) {}
 }
-ap();load();if(location.hash==='#add')tab='ex';save();render();if(location.hash==='#add')ad();
-if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(function(){});
+try { applyTheme(localStorage.getItem(THEME_KEY)); } catch (_) {}
+applyAppearance();
+
+// ============================================================
+//  UTILIDADES
+// ============================================================
+const $ = id => document.getElementById(id);
+
+function hoyMVD() {
+    try {
+        const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Montevideo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+        const get = t => Number(parts.find(p => p.type === t).value);
+        return { year: get('year'), month: get('month') - 1, day: get('day') };
+    } catch (_) {
+        const d = new Date();
+        return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
+    }
+}
+function hoyDate() { const h = hoyMVD(); return new Date(h.year, h.month, h.day); }
+function formatDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function parseDate(ds) { const [y, m, d] = ds.split('-').map(Number); return new Date(y, m - 1, d); }
+function todayStr() { return formatDate(hoyDate()); }
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function monthName(m) { return capitalize(new Date(2000, m, 1).toLocaleDateString('es-ES', { month: 'long' })); }
+function fmtDayMonth(d) { return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', ''); }
+function formatDateDisplay(ds) { return parseDate(ds).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }); }
+function weekdayShort(ds) { return parseDate(ds).toLocaleDateString('es-ES', { weekday: 'short' }).replace('.', ''); }
+function escapeHtml(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function timeToMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
+function entryHours(e) { return Math.max(0, (timeToMin(e.end) - timeToMin(e.start)) / 60); }
+function fmtHours(h) { return String(Math.round(h * 100) / 100).replace('.', ','); }
+function fmtMoney(n) {
+    n = Math.round(n * 100) / 100;
+    let s;
+    try { s = Math.abs(n).toLocaleString('es-UY', { maximumFractionDigits: 2 }); } catch (_) { s = String(Math.abs(n)); }
+    return (n < 0 ? '−$ ' : '$ ') + s;
+}
+// "30.842" y "30842" valen lo mismo; "35,99" y "35.99" también
+function parseNum(str) {
+    let s = String(str == null ? '' : str).trim().replace(/\s/g, '').replace(/^\$/, '');
+    if (s === '') return null;
+    if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+    else if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(',', '.');
+    const n = Number(s);
+    return isFinite(n) ? n : NaN;
+}
+function numToInput(n) { return (n == null || n === 0) ? '' : String(n).replace('.', ','); }
+
+let toastTimeout = null;
+function showToast(msg, ms = 2400) {
+    const el = $('toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+function showConfirm({ title = '¿Estás seguro?', message = '', okText = 'Confirmar', cancelText = 'Cancelar', danger = false, warn = false } = {}) {
+    return new Promise(resolve => {
+        const modal = $('confirmModal');
+        $('confirmTitle').textContent = title;
+        $('confirmMessage').textContent = message;
+        const icon = $('confirmIcon');
+        icon.classList.toggle('danger', danger);
+        icon.innerHTML = danger ? '<i class="fas fa-trash-alt"></i>' : '<i class="fas fa-triangle-exclamation"></i>';
+        const okBtn = $('confirmOkBtn'), cancelBtn = $('confirmCancelBtn');
+        okBtn.textContent = okText; cancelBtn.textContent = cancelText;
+        okBtn.classList.toggle('btn-danger', danger);
+        okBtn.classList.toggle('btn-warn', warn);
+        modal.style.display = 'flex';
+        function cleanup(result) {
+            modal.style.display = 'none';
+            okBtn.removeEventListener('click', onOk);
+            cancelBtn.removeEventListener('click', onCancel);
+            modal.removeEventListener('click', onOverlay);
+            document.removeEventListener('keydown', onKey);
+            resolve(result);
+        }
+        function onOk() { cleanup(true); }
+        function onCancel() { cleanup(false); }
+        function onOverlay(ev) { if (ev.target.id === 'confirmModal') cleanup(false); }
+        function onKey(ev) { if (ev.key === 'Escape') cleanup(false); }
+        okBtn.addEventListener('click', onOk);
+        cancelBtn.addEventListener('click', onCancel);
+        modal.addEventListener('click', onOverlay);
+        document.addEventListener('keydown', onKey);
+    });
+}
+
+// ============================================================
+//  DATOS (se guardan en este dispositivo)
+//  data = { settings, entries: [{id,date,start,end,done,comment}],
+//           periods: { 'AAAA-MM': { goal, min, night, weekend, rate, base, nightRate, weekendRate,
+//                                    expenses: [{id,name,amount,paid}], incomes: [{id,name,amount}] } } }
+// ============================================================
+let data = loadData();
+
+function emptyData() { return { settings: { ...DEFAULT_SETTINGS }, entries: [], periods: {} }; }
+function normalizeData(raw) {
+    const d = emptyData();
+    if (!raw || typeof raw !== 'object') return d;
+    d.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
+    d.entries = Array.isArray(raw.entries) ? raw.entries.filter(e => e && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && /^\d{2}:\d{2}$/.test(e.start) && /^\d{2}:\d{2}$/.test(e.end)).map((e, i) => ({
+        id: Number.isFinite(e.id) ? e.id : i + 1, date: e.date, start: e.start, end: e.end, done: !!e.done, comment: String(e.comment || '')
+    })) : [];
+    const seen = new Set();
+    d.entries.forEach(e => { while (seen.has(e.id)) e.id++; seen.add(e.id); });
+    if (raw.periods && typeof raw.periods === 'object') {
+        for (const [k, p] of Object.entries(raw.periods)) {
+            if (!/^\d{4}-\d{2}$/.test(k) || !p || typeof p !== 'object') continue;
+            const q = { ...p };
+            q.expenses = Array.isArray(p.expenses) ? p.expenses.map((x, i) => ({ id: x.id || i + 1, name: String(x.name || ''), amount: Number(x.amount) || 0, paid: !!x.paid })) : [];
+            q.incomes = Array.isArray(p.incomes) ? p.incomes.map((x, i) => ({ id: x.id || i + 1, name: String(x.name || ''), amount: Number(x.amount) || 0 })) : [];
+            d.periods[k] = q;
+        }
+    }
+    return d;
+}
+function loadData() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) return normalizeData(JSON.parse(raw));
+    } catch (e) { console.error('No se pudo leer lo guardado', e); }
+    return emptyData();
+}
+function saveData() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+    catch (e) { console.error(e); showToast('No se pudo guardar en este dispositivo'); }
+}
+function nextId(list) { return list.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1; }
+
+// ============================================================
+//  PERÍODOS: del 26 al 25. Se identifican por el mes en que se cobran.
+//  Ej.: "2026-12" = extras del 26/10 al 25/11, a cobrar en diciembre.
+// ============================================================
+function periodKeyOf(ds) {
+    const [y, m, d] = ds.split('-').map(Number);
+    const idx = y * 12 + (m - 1) + (d > CIERRE_DIA ? 1 : 0) + 1;
+    return `${Math.floor(idx / 12)}-${String(idx % 12 + 1).padStart(2, '0')}`;
+}
+function parseKey(key) { const [y, m] = key.split('-').map(Number); return { year: y, month: m - 1 }; }
+function shiftKey(key, delta) {
+    const { year, month } = parseKey(key);
+    const idx = year * 12 + month + delta;
+    return `${Math.floor(idx / 12)}-${String(idx % 12 + 1).padStart(2, '0')}`;
+}
+function periodRange(key) {
+    const { year, month } = parseKey(key);
+    const startDate = new Date(year, month - 2, CIERRE_DIA + 1);
+    const endDate = new Date(year, month - 1, CIERRE_DIA);
+    return { startDate, endDate, start: formatDate(startDate), end: formatDate(endDate) };
+}
+function currentKey() { return periodKeyOf(todayStr()); }
+function getPeriod(key) { return data.periods[key] || { expenses: [], incomes: [] }; }
+function ensurePeriod(key) {
+    if (!data.periods[key]) data.periods[key] = { expenses: [], incomes: [] };
+    const p = data.periods[key];
+    if (!p.expenses) p.expenses = [];
+    if (!p.incomes) p.incomes = [];
+    return p;
+}
+function byDateTime(a, b) { return (a.date + a.start).localeCompare(b.date + b.start); }
+function sumBy(list, fn) { return list.reduce((s, x) => s + fn(x), 0); }
+
+function calc(key) {
+    const p = getPeriod(key), s = data.settings;
+    const eff = f => (p[f] != null ? p[f] : s[f]);
+    const r = periodRange(key);
+    const list = data.entries.filter(e => e.date >= r.start && e.date <= r.end).sort(byDateTime);
+    const hoursAll = sumBy(list, entryHours);
+    const hoursDone = sumBy(list.filter(e => e.done), entryHours);
+    const rate = eff('rate'), base = eff('base');
+    const extras = hoursDone * rate;
+    const extrasPending = (hoursAll - hoursDone) * rate;
+    const night = p.night || 0, weekend = p.weekend || 0;
+    const nightPay = night * eff('nightRate'), weekendPay = weekend * eff('weekendRate');
+    const total = base + extras + nightPay + weekendPay;
+    const goal = p.goal != null ? p.goal : s.goal;
+    const min = p.min != null ? p.min : s.min;
+    const expenses = p.expenses || [], incomes = p.incomes || [];
+    const expTotal = sumBy(expenses, x => x.amount), incTotal = sumBy(incomes, x => x.amount);
+    const advance = sumBy(expenses.filter(x => /adelanto/i.test(x.name)), x => x.amount);
+    return {
+        key, range: r, list, hoursAll, hoursDone, hoursPending: hoursAll - hoursDone,
+        rate, base, extras, extrasPending, night, weekend, nightPay, weekendPay, total,
+        goal, min, remaining: Math.max(0, goal - hoursAll), remainingMin: Math.max(0, min - hoursAll),
+        expenses, incomes, expTotal, incTotal, advance, net: total - advance,
+        left: total + incTotal - expTotal,
+        expPending: sumBy(expenses.filter(x => !x.paid), x => x.amount)
+    };
+}
+
+// ============================================================
+//  EXTRAS: alta, edición, baja
+// ============================================================
+function overlapping(date, start, end, exceptId) {
+    const a = timeToMin(start), b = timeToMin(end);
+    return data.entries.some(e => e.id !== exceptId && e.date === date && timeToMin(e.start) < b && a < timeToMin(e.end));
+}
+function addEntry(date, start, end, comment, done) {
+    data.entries.push({ id: nextId(data.entries), date, start, end, done: !!done, comment: (comment || '').trim() });
+    saveData(); renderAll();
+}
+function toggleDone(id) {
+    const e = data.entries.find(x => x.id === id);
+    if (e) { e.done = !e.done; saveData(); renderAll(); }
+}
+function deleteEntry(id) {
+    data.entries = data.entries.filter(e => e.id !== id);
+    saveData(); renderAll(); showToast('Extra eliminada');
+}
+async function confirmDeleteEntry(id) {
+    const ok = await showConfirm({ title: '¿Eliminar esta extra?', message: 'Esta acción no se puede deshacer.', okText: 'Eliminar', danger: true });
+    if (ok) deleteEntry(id);
+}
+
+let editingEntryId = null;
+function openEditModal(id) {
+    const e = data.entries.find(x => x.id === id);
+    if (!e) return;
+    editingEntryId = id;
+    $('editDate').value = e.date; $('editStart').value = e.start; $('editEnd').value = e.end;
+    $('editComment').value = e.comment || '';
+    $('editModal').style.display = 'flex';
+}
+function closeEditModal() { editingEntryId = null; $('editModal').style.display = 'none'; }
+async function saveEditFromModal() {
+    const e = data.entries.find(x => x.id === editingEntryId);
+    if (!e) return;
+    const date = $('editDate').value, start = $('editStart').value, end = $('editEnd').value;
+    if (!date || !start || !end) { showToast('Completá fecha y horario'); return; }
+    if (start >= end) { showToast('El inicio debe ser anterior al final'); return; }
+    if (overlapping(date, start, end, e.id)) {
+        const ok = await showConfirm({ title: 'Se pisa con otra extra', message: 'Ya tenés una extra en ese horario. ¿Guardar igual?', okText: 'Guardar igual', warn: true });
+        if (!ok) return;
+    }
+    e.date = date; e.start = start; e.end = end; e.comment = $('editComment').value.trim();
+    selectedDate = date;
+    saveData(); closeEditModal(); renderAll(); showToast('Extra actualizada');
+}
+
+// ============================================================
+//  CALENDARIO
+// ============================================================
+let currentYear = hoyMVD().year;
+let currentMonth = hoyMVD().month;
+let selectedDate = todayStr();
+let currentTab = 'tabCalendar';
+
+function rateFor(ds) { const p = getPeriod(periodKeyOf(ds)); return p.rate != null ? p.rate : data.settings.rate; }
+function entriesOn(ds) { return data.entries.filter(e => e.date === ds).sort(byDateTime); }
+function dayStatus(ds) {
+    const l = entriesOn(ds);
+    if (!l.length) return 'none';
+    return l.every(e => e.done) ? 'done' : 'pending';
+}
+
+function renderCalendar() {
+    const grid = $('calendarGrid');
+    $('monthLabel').innerHTML = `${monthName(currentMonth)} <small>${currentYear}</small>`;
+    const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const daysInPrev = new Date(currentYear, currentMonth, 0).getDate();
+    const today = todayStr();
+    const withOT = new Set(data.entries.map(e => e.date));
+    const cellCls = (ds, extra) => {
+        let c = 'day-cell' + (extra || '');
+        if (withOT.has(ds)) { c += ' has-overtime ' + dayStatus(ds); }
+        if (ds === today) c += ' today';
+        if (ds === selectedDate) c += ' selected';
+        return c;
+    };
+    let html = '';
+    for (const n of ['L', 'M', 'M', 'J', 'V', 'S', 'D']) html += `<div class="day-name">${n}</div>`;
+    const startOffset = firstDay === 0 ? 6 : firstDay - 1;
+    for (let i = startOffset - 1; i >= 0; i--) {
+        const day = daysInPrev - i, ds = formatDate(new Date(currentYear, currentMonth - 1, day));
+        html += `<button class="${cellCls(ds, ' other-month')}" data-date="${ds}">${day}</button>`;
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+        const ds = formatDate(new Date(currentYear, currentMonth, d));
+        html += `<button class="${cellCls(ds)}" data-date="${ds}"><span class="day-number">${d}</span></button>`;
+    }
+    const remaining = (7 - ((startOffset + daysInMonth) % 7)) % 7;
+    for (let d = 1; d <= remaining; d++) {
+        const ds = formatDate(new Date(currentYear, currentMonth + 1, d));
+        html += `<button class="${cellCls(ds, ' other-month')}" data-date="${ds}">${d}</button>`;
+    }
+    grid.innerHTML = html;
+
+    // El mes en pantalla cae en parte en dos períodos: se avisa cuál es el que corre hoy
+    const cur = periodRange(currentKey());
+    $('calLegend').innerHTML = `<span class="lg"><i class="lg-dot pending"></i>Pendiente</span><span class="lg"><i class="lg-dot done"></i>Hecha</span>`
+        + `<span class="lg-cycle">Período actual: ${fmtDayMonth(cur.startDate)} al ${fmtDayMonth(cur.endDate)}</span>`;
+    const isThisMonth = currentYear === hoyMVD().year && currentMonth === hoyMVD().month;
+    $('todayBarCal').style.display = isThisMonth ? 'none' : 'flex';
+    renderDayDetail(selectedDate);
+}
+
+function renderDayDetail(ds) {
+    const content = $('dayDetailContent');
+    if (!ds) {
+        $('detailDayName').textContent = 'Seleccioná un día'; $('detailDateBadge').textContent = '—'; content.innerHTML = '';
+        return;
+    }
+    $('detailDayName').textContent = capitalize(parseDate(ds).toLocaleDateString('es-ES', { weekday: 'long' }));
+    $('detailDateBadge').textContent = formatDateDisplay(ds);
+    const list = entriesOn(ds);
+    if (!list.length) {
+        content.innerHTML = `<div class="empty-state"><i class="fas fa-clock"></i><p>Sin extras este día</p></div>`;
+        return;
+    }
+    content.innerHTML = list.map(e => {
+        const h = entryHours(e);
+        return `<div class="ot-item ${e.done ? 'done' : ''}" data-id="${e.id}">
+            <div class="ot-check ${e.done ? 'checked' : ''}" data-act="toggle" data-id="${e.id}">${e.done ? '<i class="fas fa-check"></i>' : ''}</div>
+            <div class="ot-info">
+                <div class="ot-person">${e.start} – ${e.end}</div>
+                <div class="ot-time">${fmtHours(h)} h${rateFor(e.date) ? ' · ' + fmtMoney(h * rateFor(e.date)) : ''}</div>
+                ${e.comment ? `<div class="ot-comment"><i class="fas fa-comment-dots"></i> ${escapeHtml(e.comment)}</div>` : ''}
+            </div>
+            <button class="ot-edit" data-act="edit" data-id="${e.id}" aria-label="Editar"><i class="fas fa-pen"></i></button>
+            <button class="ot-delete" data-act="delete" data-id="${e.id}" aria-label="Eliminar"><i class="fas fa-trash-alt"></i></button>
+        </div>`;
+    }).join('');
+}
+
+function handleEntryAction(act, id) {
+    if (act === 'toggle') toggleDone(id);
+    else if (act === 'edit') openEditModal(id);
+    else if (act === 'delete') confirmDeleteEntry(id);
+}
+
+// ============================================================
+//  NAVEGACIÓN DE PERÍODO (Resumen y Plata comparten el mismo)
+// ============================================================
+let periodKey = currentKey();
+
+function renderPeriodNav() {
+    const { year, month } = parseKey(periodKey);
+    const r = periodRange(periodKey);
+    const html = `<button data-pshift="-1" aria-label="Período anterior"><i class="fas fa-chevron-left"></i></button>
+        <span class="month-label">${monthName(month)} <small>${year}</small></span>
+        <button data-pshift="1" aria-label="Período siguiente"><i class="fas fa-chevron-right"></i></button>`;
+    $('navSummary').innerHTML = html; $('navMoney').innerHTML = html;
+    const sub = `Extras del ${fmtDayMonth(r.startDate)} al ${fmtDayMonth(r.endDate)} · se cobra en ${monthName(month).toLowerCase()}`;
+    $('subSummary').textContent = sub; $('subMoney').textContent = sub;
+    const away = periodKey !== currentKey();
+    $('todayBarSum').style.display = away ? 'flex' : 'none';
+    $('todayBarMoney').style.display = away ? 'flex' : 'none';
+}
+
+// ============================================================
+//  RESUMEN
+// ============================================================
+function renderSummary() {
+    renderPeriodNav();
+    const c = calc(periodKey);
+    const box = $('summaryContainer');
+    const noValues = !c.rate && !c.base;
+
+    // --- cuánto se cobra
+    let lines = '';
+    lines += `<div class="hero-line"><span>Sueldo base</span><b>${fmtMoney(c.base)}</b></div>`;
+    lines += `<div class="hero-line"><span>Extras hechas (${fmtHours(c.hoursDone)} h)</span><b>${fmtMoney(c.extras)}</b></div>`;
+    if (c.night) lines += `<div class="hero-line"><span>Nocturnas (${fmtHours(c.night)} h)</span><b>${fmtMoney(c.nightPay)}</b></div>`;
+    if (c.weekend) lines += `<div class="hero-line"><span>Fin de semana (${fmtHours(c.weekend)} h)</span><b>${fmtMoney(c.weekendPay)}</b></div>`;
+    if (c.hoursPending > 0 && c.rate) lines += `<div class="hero-line"><span>Extras por hacer (${fmtHours(c.hoursPending)} h)</span><b>+ ${fmtMoney(c.extrasPending)}</b></div>`;
+    if (c.advance > 0) lines += `<div class="hero-line strong"><span>Total − adelanto (${fmtMoney(c.advance)})</span><b>${fmtMoney(c.net)}</b></div>`;
+    const hero = `<div class="hero-card">
+        <div class="hero-label">Total del mes</div>
+        <div class="hero-amount">${fmtMoney(c.total)}</div>
+        <div class="hero-lines">${lines}</div>
+        ${noValues ? `<div class="hero-hint"><i class="fas fa-circle-info"></i> Cargá tu valor hora y sueldo base en Ajustes (tocá tu perfil, arriba a la izquierda).</div>` : ''}
+    </div>`;
+
+    // --- horas
+    const scale = Math.max(c.goal, c.hoursAll, c.min, 1);
+    const pct = h => Math.min(100, (h / scale) * 100);
+    const minOk = c.hoursAll >= c.min, goalOk = c.hoursAll >= c.goal;
+    const dias3 = Math.ceil(c.remaining / 3), dias6 = Math.ceil(c.remaining / 6);
+    const hoursCard = `<div class="card">
+        <div class="card-head"><h3>Horas del período</h3><button class="mini-btn" data-act="period-settings"><i class="fas fa-sliders"></i> Ajustar mes</button></div>
+        <div class="prog-top"><div class="prog-big">${fmtHours(c.hoursAll)} <small>de ${fmtHours(c.goal)} h</small></div></div>
+        <div class="prog-bar">
+            <div class="prog-seg pend" style="width:${pct(c.hoursAll)}%"></div>
+            <div class="prog-seg done" style="width:${pct(c.hoursDone)}%"></div>
+            ${c.min > 0 ? `<div class="prog-mark" style="left:calc(${pct(c.min)}% - 1px)" title="Mínimo"></div>` : ''}
+        </div>
+        <div class="prog-legend">
+            <span class="lg"><i class="lg-dot done"></i>${fmtHours(c.hoursDone)} h hechas</span>
+            <span class="lg"><i class="lg-dot pend"></i>${fmtHours(c.hoursPending)} h por hacer</span>
+            <span class="lg"><i class="lg-dot min"></i>Mínimo</span>
+        </div>
+        <div class="goal-rows">
+            <div class="goal-row"><span>Mínimo · ${fmtHours(c.min)} h${c.rate ? ` <small>(${fmtMoney(c.min * c.rate)})</small>` : ''}</span><span class="pill ${minOk ? 'ok' : 'go'}">${minOk ? 'COMPLETO' : 'FALTAN ' + fmtHours(c.remainingMin) + ' H'}</span></div>
+            <div class="goal-row"><span>Objetivo · ${fmtHours(c.goal)} h${c.rate ? ` <small>(${fmtMoney(c.goal * c.rate)})</small>` : ''}</span><span class="pill ${goalOk ? 'ok' : 'go'}">${goalOk ? 'COMPLETO' : 'EN PROGRESO'}</span></div>
+        </div>
+        ${c.remaining > 0 ? `<div class="faltan">Para llegar al objetivo faltan <b>${fmtHours(c.remaining)} h</b>: son <b>${dias3}</b> ${dias3 === 1 ? 'día' : 'días'} de 3 h o <b>${dias6}</b> ${dias6 === 1 ? 'día' : 'días'} de 6 h.</div>`
+            : `<div class="faltan">¡Objetivo cumplido! Ya pasaste las ${fmtHours(c.goal)} h.</div>`}
+    </div>`;
+
+    // --- lista de extras
+    let listHtml;
+    if (!c.list.length) {
+        listHtml = `<div class="empty-state"><i class="fas fa-calendar-plus"></i><p>No hay extras en este período</p><p class="empty-hint">Agregalas desde la pestaña “Agregar”.</p></div>`;
+    } else {
+        listHtml = c.list.map(e => {
+            const h = entryHours(e);
+            const d = parseDate(e.date);
+            return `<div class="sum-detail-item ${e.done ? 'done' : ''}">
+                <div class="sd-day"><b>${d.getDate()}</b><small>${weekdayShort(e.date)}</small></div>
+                <div class="sd-info"><span class="sd-time">${e.start} – ${e.end}</span><span class="sd-note">${e.comment ? escapeHtml(e.comment) : capitalize(d.toLocaleDateString('es-ES', { month: 'long' }))}</span></div>
+                <div class="sd-right"><span class="sd-h">${fmtHours(h)} h</span>${c.rate ? `<span class="sd-money">${fmtMoney(h * c.rate)}</span>` : ''}</div>
+                <button class="sd-btn sd-check ${e.done ? 'checked' : ''}" data-act="toggle" data-id="${e.id}" aria-label="${e.done ? 'Marcar como pendiente' : 'Marcar como hecha'}"><i class="fas fa-check"></i></button>
+                <button class="sd-btn sd-edit" data-act="edit" data-id="${e.id}" aria-label="Editar"><i class="fas fa-pen"></i></button>
+                <button class="sd-btn sd-delete" data-act="delete" data-id="${e.id}" aria-label="Eliminar"><i class="fas fa-trash-alt"></i></button>
+            </div>`;
+        }).join('');
+    }
+    const listCard = `<div class="card extras-list-card">
+        <div class="card-head"><h3>Extras (${c.list.length})</h3><span class="card-aside">${fmtHours(c.hoursAll)} h</span></div>
+        ${listHtml}
+        ${c.hoursPending > 0 ? `<button type="button" class="sum-markall" data-act="mark-all"><i class="fas fa-check-double"></i> Marcar todas como hechas</button>` : ''}
+    </div>`;
+
+    box.innerHTML = hero + hoursCard + listCard
+        + `<div class="export-row"><button class="btn-secondary" data-act="export-csv"><i class="fas fa-file-excel"></i> Bajar este período (Excel)</button></div>
+           <div class="summary-footer"></div>`;
+}
+
+async function markAllDone() {
+    const c = calc(periodKey);
+    const pend = c.list.filter(e => !e.done);
+    if (!pend.length) return;
+    const ok = await showConfirm({ title: '¿Marcar todas como hechas?', message: `Se marcan ${pend.length} ${pend.length === 1 ? 'extra' : 'extras'} de este período.`, okText: 'Marcar todas', warn: true });
+    if (!ok) return;
+    pend.forEach(e => { e.done = true; });
+    saveData(); renderAll(); showToast('Listo');
+}
+
+// ============================================================
+//  AJUSTAR PERÍODO (objetivo, mínimo, nocturnas, fin de semana)
+// ============================================================
+function openPeriodModal() {
+    const c = calc(periodKey), { year, month } = parseKey(periodKey);
+    $('periodModalTitle').textContent = `Ajustar ${monthName(month).toLowerCase()} ${year}`;
+    $('perGoal').value = numToInput(c.goal); $('perMin').value = numToInput(c.min);
+    $('perNight').value = numToInput(c.night); $('perWeekend').value = numToInput(c.weekend);
+    $('periodModal').style.display = 'flex';
+}
+function closePeriodModal() { $('periodModal').style.display = 'none'; }
+function savePeriodModal() {
+    const goal = parseNum($('perGoal').value), min = parseNum($('perMin').value);
+    const night = parseNum($('perNight').value), weekend = parseNum($('perWeekend').value);
+    if ([goal, min, night, weekend].some(v => Number.isNaN(v) || (v != null && v < 0))) { showToast('Revisá los números'); return; }
+    const p = ensurePeriod(periodKey);
+    p.goal = goal == null ? data.settings.goal : goal;
+    p.min = min == null ? data.settings.min : min;
+    p.night = night || 0; p.weekend = weekend || 0;
+    saveData(); closePeriodModal(); renderAll(); showToast('Mes actualizado');
+}
+
+// ============================================================
+//  PLATA: gastos e ingresos del período
+// ============================================================
+function renderMoney() {
+    renderPeriodNav();
+    const c = calc(periodKey);
+    const box = $('moneyContainer');
+    const item = (x, kind) => `<div class="fin-item ${kind === 'exp' && x.paid ? 'paid' : ''}">
+        ${kind === 'exp' ? `<button class="sd-btn sd-check ${x.paid ? 'checked' : ''}" data-act="pay" data-id="${x.id}" aria-label="${x.paid ? 'Marcar como no pagado' : 'Marcar como pagado'}"><i class="fas fa-check"></i></button>` : ''}
+        <span class="fin-name">${escapeHtml(x.name || 'Sin nombre')}</span>
+        <span class="fin-amt">${fmtMoney(x.amount)}</span>
+        <button class="sd-btn sd-edit" data-act="item-edit" data-kind="${kind}" data-id="${x.id}" aria-label="Editar"><i class="fas fa-pen"></i></button>
+        <button class="sd-btn sd-delete" data-act="item-del" data-kind="${kind}" data-id="${x.id}" aria-label="Eliminar"><i class="fas fa-trash-alt"></i></button>
+    </div>`;
+
+    const left = `<div class="card">
+        <div class="card-head"><h3>Me quedan</h3><span class="card-aside">${c.left < 0 ? 'Te falta plata' : 'Después de pagar todo'}</span></div>
+        <div class="fin-big ${c.left < 0 ? 'neg' : ''}">${fmtMoney(c.left)}</div>
+        <div class="fin-eq">Cobro ${fmtMoney(c.total)} + ingresos ${fmtMoney(c.incTotal)} − gastos ${fmtMoney(c.expTotal)}</div>
+    </div>`;
+
+    const exp = `<div class="card">
+        <div class="card-head"><h3>Gastos</h3><button class="mini-btn primary" data-act="item-add" data-kind="exp"><i class="fas fa-plus"></i> Agregar</button></div>
+        ${c.expenses.length ? c.expenses.map(x => item(x, 'exp')).join('') : `<div class="fin-empty">Todavía no cargaste gastos en este período.</div>`}
+        ${c.expenses.length ? `<div class="fin-total"><span>Total gastos</span><span>${fmtMoney(c.expTotal)}</span></div>
+            <div class="fin-sub"><span>Todavía debo pagar</span><span>${fmtMoney(c.expPending)}</span></div>` : ''}
+        <div class="fin-actions"><button class="mini-btn" data-act="copy-prev"><i class="fas fa-copy"></i> Copiar gastos del período anterior</button></div>
+    </div>`;
+
+    const inc = `<div class="card">
+        <div class="card-head"><h3>Ingresos</h3><button class="mini-btn primary" data-act="item-add" data-kind="inc"><i class="fas fa-plus"></i> Agregar</button></div>
+        ${c.incomes.length ? c.incomes.map(x => item(x, 'inc')).join('') : `<div class="fin-empty">Sin otros ingresos en este período.</div>`}
+        ${c.incomes.length ? `<div class="fin-total"><span>Total ingresos</span><span>${fmtMoney(c.incTotal)}</span></div>` : ''}
+    </div>`;
+
+    box.innerHTML = left + exp + inc + `<div class="summary-footer"></div>`;
+}
+
+let editingItem = null; // { kind, id|null }
+function openItemModal(kind, id) {
+    const p = getPeriod(periodKey);
+    const list = kind === 'exp' ? p.expenses : p.incomes;
+    const it = id != null ? (list || []).find(x => x.id === id) : null;
+    editingItem = { kind, id: it ? it.id : null };
+    $('itemModalTitle').textContent = (it ? 'Editar ' : 'Agregar ') + (kind === 'exp' ? 'gasto' : 'ingreso');
+    $('itemName').value = it ? it.name : '';
+    $('itemAmount').value = it ? numToInput(it.amount) : '';
+    $('itemError').style.display = 'none';
+    // sugerencias con los nombres que ya usaste
+    const names = new Set();
+    Object.values(data.periods).forEach(pp => (kind === 'exp' ? pp.expenses : pp.incomes).forEach(x => x.name && names.add(x.name.replace(/\s*\d+\s+de\s+\d+\s*$/i, '').trim())));
+    $('itemNames').innerHTML = Array.from(names).sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option value="${escapeHtml(n)}">`).join('');
+    $('itemModal').style.display = 'flex';
+    setTimeout(() => $('itemName').focus(), 120);
+}
+function closeItemModal() { editingItem = null; $('itemModal').style.display = 'none'; }
+function saveItemModal() {
+    if (!editingItem) return;
+    const name = $('itemName').value.trim();
+    const amount = parseNum($('itemAmount').value);
+    const err = $('itemError');
+    if (!name) { err.textContent = 'Poné de qué se trata.'; err.style.display = 'block'; return; }
+    if (amount == null || Number.isNaN(amount) || amount < 0) { err.textContent = 'Escribí un valor válido (por ejemplo 1500).'; err.style.display = 'block'; return; }
+    const p = ensurePeriod(periodKey);
+    const list = editingItem.kind === 'exp' ? p.expenses : p.incomes;
+    if (editingItem.id != null) {
+        const it = list.find(x => x.id === editingItem.id);
+        if (it) { it.name = name; it.amount = amount; }
+    } else {
+        const it = { id: nextId(list), name, amount };
+        if (editingItem.kind === 'exp') it.paid = false;
+        list.push(it);
+    }
+    saveData(); closeItemModal(); renderAll(); showToast('Guardado');
+}
+async function deleteItem(kind, id) {
+    const ok = await showConfirm({ title: kind === 'exp' ? '¿Eliminar este gasto?' : '¿Eliminar este ingreso?', message: 'Esta acción no se puede deshacer.', okText: 'Eliminar', danger: true });
+    if (!ok) return;
+    const p = ensurePeriod(periodKey);
+    if (kind === 'exp') p.expenses = p.expenses.filter(x => x.id !== id);
+    else p.incomes = p.incomes.filter(x => x.id !== id);
+    saveData(); renderAll();
+}
+function togglePaid(id) {
+    const x = ensurePeriod(periodKey).expenses.find(y => y.id === id);
+    if (x) { x.paid = !x.paid; saveData(); renderAll(); }
+}
+
+// "CELU 16 de 18" → "CELU 17 de 18"; si ya era la última cuota, no se copia
+function nextInstallment(name) {
+    const m = name.match(/^(.*?)(\d+)\s+de\s+(\d+)\s*$/i);
+    if (!m) return name;
+    const cur = parseInt(m[2], 10), tot = parseInt(m[3], 10);
+    if (cur >= tot) return null;
+    return `${m[1]}${cur + 1} de ${tot}`;
+}
+async function copyPrevExpenses() {
+    const prev = getPeriod(shiftKey(periodKey, -1));
+    if (!prev.expenses || !prev.expenses.length) { showToast('El período anterior no tiene gastos'); return; }
+    const p = ensurePeriod(periodKey);
+    if (p.expenses.length) {
+        const ok = await showConfirm({ title: '¿Copiar igual?', message: 'Este período ya tiene gastos. Se agregan los del período anterior a los que ya hay.', okText: 'Copiar', warn: true });
+        if (!ok) return;
+    }
+    let n = 0, skipped = 0;
+    for (const x of prev.expenses) {
+        const name = nextInstallment(x.name);
+        if (name === null) { skipped++; continue; }
+        p.expenses.push({ id: nextId(p.expenses), name, amount: x.amount, paid: false });
+        n++;
+    }
+    saveData(); renderAll();
+    showToast(`Copiados ${n} ${n === 1 ? 'gasto' : 'gastos'}${skipped ? ` (${skipped} ya terminaron de pagarse)` : ''}`, 3400);
+}
+
+// ============================================================
+//  AGREGAR
+// ============================================================
+let addDone = false, addDoneManual = false;
+function syncAddDone() {
+    if (!addDoneManual) addDone = ($('addDate').value || todayStr()) <= todayStr();
+    const sw = $('addDoneToggle');
+    sw.classList.toggle('on', addDone);
+    sw.setAttribute('aria-checked', addDone ? 'true' : 'false');
+}
+function updateHoursPreview() {
+    const s = $('addStart').value, e = $('addEnd').value, el = $('hoursPreview');
+    if (!s || !e) { el.innerHTML = ''; return; }
+    if (s >= e) { el.innerHTML = '<span style="color:#EF4444;">El inicio debe ser anterior al final</span>'; return; }
+    const h = (timeToMin(e) - timeToMin(s)) / 60;
+    const key = periodKeyOf($('addDate').value || todayStr());
+    const rate = calc(key).rate;
+    el.innerHTML = `Son <b>${fmtHours(h)} h</b>${rate ? ` · <b>${fmtMoney(h * rate)}</b>` : ''} <span style="color:var(--text-light)">(período de ${monthName(parseKey(key).month).toLowerCase()})</span>`;
+}
+function renderShiftChips() {
+    const counts = new Map();
+    data.entries.forEach(e => { const k = e.start + '|' + e.end; counts.set(k, (counts.get(k) || 0) + 1); });
+    const top = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const box = $('shiftChips');
+    box.style.display = top.length ? 'flex' : 'none';
+    box.innerHTML = top.map(([k]) => { const [s, e] = k.split('|'); return `<button type="button" class="person-chip" data-start="${s}" data-end="${e}">${s} – ${e}</button>`; }).join('');
+}
+async function submitAdd() {
+    const date = $('addDate').value, start = $('addStart').value, end = $('addEnd').value;
+    if (!date || !start || !end) { showToast('Completá fecha y horario'); return; }
+    if (start >= end) { showToast('El inicio debe ser anterior al final'); return; }
+    if (overlapping(date, start, end)) {
+        const ok = await showConfirm({ title: 'Se pisa con otra extra', message: 'Ya tenés una extra en ese horario. ¿Guardar igual?', okText: 'Guardar igual', warn: true });
+        if (!ok) return;
+    }
+    addEntry(date, start, end, $('addComment').value, addDone);
+    $('addComment').value = '';
+    addDoneManual = false;
+    const d = parseDate(date);
+    currentYear = d.getFullYear(); currentMonth = d.getMonth(); selectedDate = date;
+    periodKey = periodKeyOf(date);
+    showToast(`Extra agregada · ${fmtHours((timeToMin(end) - timeToMin(start)) / 60)} h`);
+    switchTab('tabCalendar');
+}
+
+// ============================================================
+//  EXPORTAR / COPIA DE SEGURIDAD
+// ============================================================
+function csvCell(v) {
+    const s = String(v == null ? '' : v);
+    return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+async function downloadFile(filename, content, mime) {
+    const blob = new Blob([content], { type: mime });
+    try {
+        const file = new File([blob], filename, { type: mime });
+        if (navigator.canShare && navigator.canShare({ files: [file] }) && /iPhone|iPad|Android/i.test(navigator.userAgent)) {
+            await navigator.share({ files: [file], title: filename });
+            return;
+        }
+    } catch (err) { if (err && err.name === 'AbortError') return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function exportCsv() {
+    const c = calc(periodKey), { year, month } = parseKey(periodKey);
+    const num = n => String(Math.round(n * 100) / 100).replace('.', ',');
+    const rows = [['Fecha', 'Desde', 'Hasta', 'Horas', 'Valor $', 'Hecha', 'Comentario']];
+    c.list.forEach(e => rows.push([e.date, e.start, e.end, num(entryHours(e)), num(entryHours(e) * c.rate), e.done ? 'Sí' : 'No', e.comment]));
+    rows.push([]);
+    rows.push(['Horas hechas', '', '', num(c.hoursDone), num(c.extras)]);
+    rows.push(['Horas por hacer', '', '', num(c.hoursPending), num(c.extrasPending)]);
+    rows.push(['Sueldo base', '', '', '', num(c.base)]);
+    rows.push(['Total del mes', '', '', '', num(c.total)]);
+    if (c.advance) rows.push(['Total − adelanto', '', '', '', num(c.net)]);
+    rows.push([]);
+    rows.push(['Gastos', '', '', '', '']);
+    c.expenses.forEach(x => rows.push([x.name, '', '', '', num(x.amount), x.paid ? 'Pagado' : '']));
+    rows.push(['Total gastos', '', '', '', num(c.expTotal)]);
+    rows.push(['Ingresos', '', '', '', '']);
+    c.incomes.forEach(x => rows.push([x.name, '', '', '', num(x.amount)]));
+    rows.push(['Total ingresos', '', '', '', num(c.incTotal)]);
+    rows.push(['Me quedan', '', '', '', num(c.left)]);
+    const csv = '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
+    downloadFile(`extras-${year}-${String(month + 1).padStart(2, '0')}.csv`, csv, 'text/csv;charset=utf-8');
+}
+function backupNow() {
+    const payload = { app: 'horax-mis-extras', version: 1, exportedAt: new Date().toISOString(), data };
+    downloadFile(`mis-extras-copia-${todayStr()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+}
+async function restoreFromFile(file) {
+    if (!file) return;
+    let parsed;
+    try { parsed = JSON.parse(await file.text()); } catch (_) { showToast('Ese archivo no se puede leer'); return; }
+    const raw = parsed && parsed.data ? parsed.data : parsed;
+    if (!raw || !Array.isArray(raw.entries)) { showToast('Ese archivo no parece una copia de Mis extras'); return; }
+    const incoming = normalizeData(raw);
+    const ok = await showConfirm({
+        title: '¿Cargar esta copia?',
+        message: `Trae ${incoming.entries.length} extras. Reemplaza todo lo que hay ahora en este dispositivo (${data.entries.length} extras).`,
+        okText: 'Cargar copia', warn: true
+    });
+    if (!ok) return;
+    data = incoming;
+    saveData();
+    applyTheme(data.settings.theme);
+    periodKey = currentKey();
+    applyProfileToHeader();
+    closeSettings(true);
+    renderAll();
+    showToast('Copia cargada');
+}
+async function wipeAll() {
+    const ok = await showConfirm({ title: '¿Borrar todo?', message: 'Se borran todas las extras, gastos, ingresos y ajustes de este dispositivo. No se puede deshacer.', okText: 'Borrar todo', danger: true });
+    if (!ok) return;
+    data = emptyData();
+    saveData();
+    applyTheme(THEME_DEFAULT);
+    periodKey = currentKey();
+    applyProfileToHeader();
+    closeSettings(true);
+    renderAll();
+    showToast('Todo borrado');
+}
+
+// ============================================================
+//  AJUSTES
+// ============================================================
+let pendingTheme = THEME_DEFAULT;
+function renderThemeSwatches() {
+    const box = $('themeSwatches');
+    box.innerHTML = THEME_COLORS.map(c => {
+        const sel = c.hex.toLowerCase() === pendingTheme.toLowerCase();
+        return `<button type="button" class="theme-swatch ${sel ? 'sel' : ''}" data-hex="${c.hex}" style="background:${c.hex};" title="${c.name}" aria-label="${c.name}" aria-pressed="${sel}">${sel ? `<i class="fas fa-check" style="color:${onColorFor(c.hex)};"></i>` : ''}</button>`;
+    }).join('');
+}
+function applyProfileToHeader() {
+    const s = data.settings;
+    applyTheme(s.theme);
+    const name = (s.name || '').trim();
+    $('headerTitle').textContent = name || 'Mis extras';
+    $('headerSubtitle').textContent = name ? 'HORAX · mis extras' : 'HORAX · lo mío';
+    const ini = name ? name.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() : '';
+    $('profileIcon').innerHTML = ini ? escapeHtml(ini) : '<i class="fas fa-clock"></i>';
+}
+function openSettings() {
+    const s = data.settings;
+    $('setName').value = s.name || '';
+    $('setRate').value = numToInput(s.rate); $('setBase').value = numToInput(s.base);
+    $('setNight').value = numToInput(s.nightRate); $('setWeekend').value = numToInput(s.weekendRate);
+    $('setGoal').value = numToInput(s.goal); $('setMin').value = numToInput(s.min);
+    pendingTheme = s.theme || THEME_DEFAULT;
+    renderThemeSwatches(); renderModeSeg(); updateSettingsAvatar();
+    $('settingsError').style.display = 'none';
+    $('settingsBody').scrollTop = 0;
+    $('settingsModal').style.display = 'flex';
+}
+function closeSettings(force) {
+    $('settingsModal').style.display = 'none';
+    applyTheme(data.settings.theme); // deshace la vista previa si no se guardó
+}
+function updateSettingsAvatar() {
+    const n = $('setName').value.trim();
+    const ini = n ? n.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() : '';
+    $('profileAvatar').innerHTML = ini ? escapeHtml(ini) : '<i class="fas fa-clock"></i>';
+}
+function saveSettings() {
+    const err = $('settingsError');
+    const vals = {
+        rate: parseNum($('setRate').value), base: parseNum($('setBase').value),
+        nightRate: parseNum($('setNight').value), weekendRate: parseNum($('setWeekend').value),
+        goal: parseNum($('setGoal').value), min: parseNum($('setMin').value)
+    };
+    if (Object.values(vals).some(v => Number.isNaN(v) || (v != null && v < 0))) {
+        err.textContent = 'Revisá los números: tienen que ser valores como 333 o 35,99.';
+        err.style.display = 'block'; return;
+    }
+    const s = data.settings;
+    const next = {
+        rate: vals.rate || 0, base: vals.base || 0, nightRate: vals.nightRate || 0, weekendRate: vals.weekendRate || 0,
+        goal: vals.goal == null ? DEFAULT_SETTINGS.goal : vals.goal, min: vals.min == null ? DEFAULT_SETTINGS.min : vals.min
+    };
+    // los períodos anteriores al actual conservan los valores que tenían antes del cambio
+    const changed = FROZEN_FIELDS.filter(f => (s[f] || 0) !== next[f]);
+    if (changed.length) {
+        const cur = currentKey();
+        const keys = new Set(Object.keys(data.periods));
+        data.entries.forEach(e => keys.add(periodKeyOf(e.date)));
+        keys.forEach(k => {
+            if (k >= cur) return;
+            const p = ensurePeriod(k);
+            changed.forEach(f => { if (p[f] == null) p[f] = s[f] || 0; });
+        });
+    }
+    ['goal', 'min'].forEach(f => {
+        if (s[f] !== next[f]) {
+            const cur = currentKey();
+            const keys = new Set(Object.keys(data.periods));
+            data.entries.forEach(e => keys.add(periodKeyOf(e.date)));
+            keys.forEach(k => { if (k < cur) { const p = ensurePeriod(k); if (p[f] == null) p[f] = s[f]; } });
+        }
+    });
+    Object.assign(s, next);
+    s.name = $('setName').value.trim();
+    s.theme = pendingTheme;
+    saveData();
+    applyProfileToHeader();
+    $('settingsModal').style.display = 'none';
+    renderAll();
+    showToast('Ajustes guardados');
+}
+
+// ============================================================
+//  INSTALAR LA APP
+// ============================================================
+let installOS = 'ios';
+let deferredInstall = null;
+function isStandalone() { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
+function detectPlatform() {
+    const ua = navigator.userAgent || '';
+    if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
+    if (/Android/i.test(ua)) return 'android';
+    return 'desktop';
+}
+const INSTALL_STEPS = {
+    ios: {
+        steps: ['Abrí esta página en <b>Safari</b>.', 'Tocá el botón <b>Compartir</b> (el cuadrado con la flecha hacia arriba).', 'Bajá en el menú y tocá <b>Agregar a pantalla de inicio</b>.', 'Tocá <b>Agregar</b>. Listo: queda un ícono en tu celu.'],
+        note: 'En iPhone solo se puede instalar desde Safari, no desde Chrome.'
+    },
+    android: {
+        steps: ['Abrí esta página en <b>Chrome</b>.', 'Tocá los <b>tres puntitos</b> de arriba a la derecha.', 'Tocá <b>Instalar app</b> o <b>Agregar a la pantalla principal</b>.', 'Confirmá con <b>Instalar</b>.'],
+        note: 'Si ves el botón “Instalar ahora”, podés usarlo directamente.'
+    },
+    desktop: {
+        steps: ['Abrí esta página en <b>Chrome</b> o <b>Edge</b>.', 'Buscá el ícono de instalar a la derecha de la barra de direcciones.', 'Hacé clic en <b>Instalar</b>.'],
+        note: 'También sirve guardarla como favorito y usarla desde el navegador.'
+    }
+};
+function renderInstall() {
+    document.querySelectorAll('#installTabs .install-tab').forEach(b => b.classList.toggle('active', b.dataset.os === installOS));
+    const info = INSTALL_STEPS[installOS];
+    $('installSteps').innerHTML = info.steps.map(s => `<li>${s}</li>`).join('');
+    $('installNote').textContent = info.note;
+    $('installNowBtn').style.display = deferredInstall ? 'flex' : 'none';
+}
+function openInstallModal() {
+    installOS = detectPlatform();
+    renderInstall();
+    $('installModal').style.display = 'flex';
+}
+function closeInstallModal() { $('installModal').style.display = 'none'; }
+function maybeShowInstallBanner() {
+    if (isStandalone()) return;
+    try { if (localStorage.getItem(INSTALL_KEY)) return; } catch (_) {}
+    setTimeout(() => { if (!isStandalone()) $('installBanner').style.display = 'flex'; }, 2500);
+}
+function dismissInstallBanner() {
+    $('installBanner').style.display = 'none';
+    try { localStorage.setItem(INSTALL_KEY, '1'); } catch (_) {}
+}
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; });
+window.addEventListener('appinstalled', () => { deferredInstall = null; dismissInstallBanner(); closeInstallModal(); });
+
+// ============================================================
+//  PANTALLAS Y EVENTOS
+// ============================================================
+function updateBadge() {
+    const pend = calc(currentKey()).list.filter(e => !e.done).length;
+    const b = $('summaryBadge');
+    b.textContent = pend;
+    b.style.display = pend > 0 ? 'flex' : 'none';
+}
+function renderAll() {
+    renderCalendar();
+    renderSummary();
+    renderMoney();
+    renderShiftChips();
+    updateHoursPreview();
+    updateBadge();
+}
+function switchTab(tabId) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    $(tabId).classList.add('active');
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === tabId));
+    currentTab = tabId;
+    if (tabId === 'tabAdd') {
+        $('addDate').value = selectedDate || todayStr();
+        addDoneManual = false; syncAddDone(); updateHoursPreview(); renderShiftChips();
+    }
+    renderAll();
+    $('mainContent').scrollTop = 0;
+}
+
+function init() {
+    applyProfileToHeader();
+
+    // Tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+    // Calendario
+    $('prevMonth').addEventListener('click', () => { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); });
+    $('nextMonth').addEventListener('click', () => { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } renderCalendar(); });
+    $('todayBarCal').addEventListener('click', () => { const h = hoyMVD(); currentYear = h.year; currentMonth = h.month; selectedDate = todayStr(); renderCalendar(); });
+    $('calendarGrid').addEventListener('click', ev => {
+        const cell = ev.target.closest('.day-cell');
+        if (!cell || !cell.dataset.date) return;
+        selectedDate = cell.dataset.date;
+        if (cell.classList.contains('other-month')) { const d = parseDate(selectedDate); currentYear = d.getFullYear(); currentMonth = d.getMonth(); }
+        renderCalendar();
+    });
+    $('dayAddBtn').addEventListener('click', () => switchTab('tabAdd'));
+    $('dayDetailContent').addEventListener('click', ev => {
+        const el = ev.target.closest('[data-act]');
+        if (el) handleEntryAction(el.dataset.act, parseInt(el.dataset.id, 10));
+    });
+
+    // Período (Resumen / Plata)
+    document.addEventListener('click', ev => {
+        const b = ev.target.closest('[data-pshift]');
+        if (b) { periodKey = shiftKey(periodKey, parseInt(b.dataset.pshift, 10)); renderSummary(); renderMoney(); }
+    });
+    const backToNow = () => { periodKey = currentKey(); renderSummary(); renderMoney(); };
+    $('todayBarSum').addEventListener('click', backToNow);
+    $('todayBarMoney').addEventListener('click', backToNow);
+
+    // Resumen
+    $('summaryContainer').addEventListener('click', ev => {
+        const el = ev.target.closest('[data-act]');
+        if (!el) return;
+        const act = el.dataset.act;
+        if (act === 'mark-all') markAllDone();
+        else if (act === 'period-settings') openPeriodModal();
+        else if (act === 'export-csv') exportCsv();
+        else handleEntryAction(act, parseInt(el.dataset.id, 10));
+    });
+    $('periodCancelBtn').addEventListener('click', closePeriodModal);
+    $('periodSaveBtn').addEventListener('click', savePeriodModal);
+    $('periodModal').addEventListener('click', ev => { if (ev.target.id === 'periodModal') closePeriodModal(); });
+
+    // Plata
+    $('moneyContainer').addEventListener('click', ev => {
+        const el = ev.target.closest('[data-act]');
+        if (!el) return;
+        const act = el.dataset.act, id = parseInt(el.dataset.id, 10);
+        if (act === 'item-add') openItemModal(el.dataset.kind, null);
+        else if (act === 'item-edit') openItemModal(el.dataset.kind, id);
+        else if (act === 'item-del') deleteItem(el.dataset.kind, id);
+        else if (act === 'pay') togglePaid(id);
+        else if (act === 'copy-prev') copyPrevExpenses();
+    });
+    $('itemCancelBtn').addEventListener('click', closeItemModal);
+    $('itemSaveBtn').addEventListener('click', saveItemModal);
+    $('itemModal').addEventListener('click', ev => { if (ev.target.id === 'itemModal') closeItemModal(); });
+    ['itemName', 'itemAmount'].forEach(id => $(id).addEventListener('keydown', ev => { if (ev.key === 'Enter') saveItemModal(); }));
+
+    // Agregar
+    ['addDate', 'addStart', 'addEnd'].forEach(id => $(id).addEventListener('input', () => { syncAddDone(); updateHoursPreview(); }));
+    $('addDoneToggle').addEventListener('click', () => { addDoneManual = true; addDone = !addDone; syncAddDone(); });
+    $('shiftChips').addEventListener('click', ev => {
+        const b = ev.target.closest('[data-start]');
+        if (!b) return;
+        $('addStart').value = b.dataset.start; $('addEnd').value = b.dataset.end; updateHoursPreview();
+    });
+    $('addSubmitBtn').addEventListener('click', submitAdd);
+
+    // Editar extra
+    $('editCancelBtn').addEventListener('click', closeEditModal);
+    $('editSaveBtn').addEventListener('click', saveEditFromModal);
+    $('editModal').addEventListener('click', ev => { if (ev.target.id === 'editModal') closeEditModal(); });
+
+    // Ajustes
+    $('profileChip').addEventListener('click', openSettings);
+    $('profileChip').addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openSettings(); } });
+    $('settingsCancelBtn').addEventListener('click', () => closeSettings());
+    $('settingsSaveBtn').addEventListener('click', saveSettings);
+    $('settingsModal').addEventListener('click', ev => { if (ev.target.id === 'settingsModal') closeSettings(); });
+    $('setName').addEventListener('input', updateSettingsAvatar);
+    $('themeSwatches').addEventListener('click', ev => {
+        const b = ev.target.closest('.theme-swatch');
+        if (!b) return;
+        pendingTheme = b.dataset.hex; applyTheme(pendingTheme); renderThemeSwatches();
+    });
+    $('modeSeg').addEventListener('click', ev => { const b = ev.target.closest('[data-mode]'); if (b) setModePref(b.dataset.mode); });
+    $('backupBtn').addEventListener('click', backupNow);
+    $('restoreBtn').addEventListener('click', () => $('restoreFile').click());
+    $('restoreFile').addEventListener('change', ev => { restoreFromFile(ev.target.files[0]); ev.target.value = ''; });
+    $('wipeBtn').addEventListener('click', wipeAll);
+
+    // Instalar
+    $('openInstallHelpBtn').addEventListener('click', () => { closeSettings(); openInstallModal(); });
+    $('installBannerBtn').addEventListener('click', () => { dismissInstallBanner(); openInstallModal(); });
+    $('installBannerClose').addEventListener('click', dismissInstallBanner);
+    $('installCloseBtn').addEventListener('click', closeInstallModal);
+    $('installDoneBtn').addEventListener('click', closeInstallModal);
+    $('installModal').addEventListener('click', ev => { if (ev.target.id === 'installModal') closeInstallModal(); });
+    $('installTabs').addEventListener('click', ev => { const b = ev.target.closest('[data-os]'); if (b) { installOS = b.dataset.os; renderInstall(); } });
+    $('installNowBtn').addEventListener('click', async () => {
+        if (!deferredInstall) return;
+        deferredInstall.prompt();
+        try { await deferredInstall.userChoice; } catch (_) {}
+        deferredInstall = null; renderInstall();
+    });
+
+    // Pedir a Chrome/Safari que no borre los datos de la app
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (_) {}
+
+    // Atajos del manifest (#add, #calendar, #summary, #money)
+    const hashTab = { '#add': 'tabAdd', '#calendar': 'tabCalendar', '#summary': 'tabSummary', '#money': 'tabMoney' }[location.hash];
+    renderAll();
+    if (hashTab) switchTab(hashTab);
+    maybeShowInstallBanner();
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();
