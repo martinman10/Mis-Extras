@@ -92,6 +92,10 @@
                 <div class="shift-chips" id="shiftChips"></div>
                 <div class="hours-preview" id="hoursPreview"></div>
                 <div class="form-group">
+                    <label for="addRepeat">Repetir</label>
+                    <select id="addRepeat"><option value="0">No repetir</option><option value="7">Cada semana (mismo día) hasta el cierre</option><option value="1">Todos los días hasta el cierre</option></select>
+                </div>
+                <div class="form-group">
                     <label for="addComment">Comentario <span class="label-opt">(opcional)</span></label>
                     <textarea id="addComment" rows="2" placeholder="Ej: cubrí turno de..."></textarea>
                 </div>
@@ -249,7 +253,7 @@
             <details class="admin-advanced">
                 <summary>Opciones avanzadas</summary>
                 <button type="button" class="admin-advanced-link" id="wipeBtn">Borrar todos mis datos de este dispositivo</button>
-                <p class="danger-hint">Se borran las extras, gastos e ingresos y los ajustes. No se puede deshacer.</p>
+                <p class="danger-hint">Se borran las extras, gastos e ingresos y los ajustes. Si tenés la nube activada, también se borra de ahí. Tenés unos segundos para deshacer.</p>
             </details>
         </div>
 

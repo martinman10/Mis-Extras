@@ -1,4 +1,4 @@
-const CACHE_NAME = 'horax-yo-v2';
+const CACHE_NAME = 'horax-yo-v3';
 const ASSETS_TO_CACHE = ['./', './index.html', './css/style.css', './js/app.js', './js/firebase-config.js', './manifest.json', './icons/icon-192.png', './icons/icon-512.png'];
 
 // Instalación: guarda lo que pueda (si falta un archivo, no se rompe todo)
