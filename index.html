@@ -201,6 +201,20 @@
             </div>
 
             <div class="pf-section">
+                <label>Copia en la nube</label>
+                <div class="pf-list">
+                    <button type="button" class="pf-row" id="cloudBtn">
+                        <span class="pf-row-ic"><i class="fas fa-cloud"></i></span>
+                        <span class="pf-row-text">
+                            <span class="pf-row-title" id="cloudTitle">Copia en la nube</span>
+                            <small class="pf-row-sub" id="cloudSub"></small>
+                        </span>
+                        <i class="fas fa-chevron-right pf-row-end" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <p class="field-hint" id="cloudHint"></p>
+            </div>
+            <div class="pf-section">
                 <label>Tus datos</label>
                 <div class="pf-list">
                     <button type="button" class="pf-row" id="backupBtn">
@@ -229,7 +243,7 @@
                     </button>
                 </div>
                 <input type="file" id="restoreFile" accept=".json,application/json" style="display:none;" />
-                <p class="field-hint">Tus datos se guardan solo en este dispositivo. Hacé una copia de vez en cuando.</p>
+                <p class="field-hint">Tus datos se guardan en este dispositivo (y en la nube si entraste con Google). Hacé una copia de vez en cuando.</p>
             </div>
 
             <details class="admin-advanced">
@@ -374,6 +388,7 @@
     </div>
 </div>
 
+<script src="./js/firebase-config.js"></script>
 <script src="./js/app.js" defer></script>
 <script>
     if ('serviceWorker' in navigator) {
