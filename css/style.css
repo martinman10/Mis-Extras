@@ -834,3 +834,7 @@
 .calendar-grid .day-cell.selected, .calendar-grid .day-cell.selected.today { background: var(--primary); color: var(--on-primary); }
 /* Casilla sin tildar: círculo vacío (antes se veía un tilde blanco que parecía "hecho") */
 .sd-check:not(.checked) { color: transparent; border-color: var(--text-faint); }
+
+/* Casilla de hecha/pagada: una regla vieja (.sd-btn) le sacaba el borde y el fondo; acá queda asegurado */
+.sd-btn.sd-check { border: 2px solid var(--text-faint); background: transparent; color: transparent; }
+.sd-btn.sd-check.checked { border-color: #10B981; background: #10B981; color: #fff; }
