@@ -218,7 +218,7 @@ function normalizeData(raw) {
         for (const [k, p] of Object.entries(raw.periods)) {
             if (!/^\d{4}-\d{2}$/.test(k) || !p || typeof p !== 'object') continue;
             const q = { ...p };
-            q.expenses = Array.isArray(p.expenses) ? p.expenses.map((x, i) => ({ id: x.id || i + 1, name: String(x.name || ''), amount: Number(x.amount) || 0, paid: !!x.paid })) : [];
+            q.expenses = Array.isArray(p.expenses) ? p.expenses.map((x, i) => ({ id: x.id || i + 1, name: String(x.name || ''), amount: Number(x.amount) || 0, paid: !!x.paid, due: Math.min(31, Math.max(0, parseInt(x.due, 10) || 0)) })) : [];
             q.incomes = Array.isArray(p.incomes) ? p.incomes.map((x, i) => ({ id: x.id || i + 1, name: String(x.name || ''), amount: Number(x.amount) || 0, received: !!x.received })) : [];
             d.periods[k] = q;
         }
@@ -525,10 +525,10 @@ function renderSummary() {
     if (c.night) lines += `<div class="hero-line"><span>Nocturnas (${fmtHours(c.night)} h)</span><b>${fmtMoney(c.nightPay)}</b></div>`;
     if (c.weekend) lines += `<div class="hero-line"><span>Fin de semana (${fmtHours(c.weekend)} h)</span><b>${fmtMoney(c.weekendPay)}</b></div>`;
     if (c.hoursPending > 0 && c.rate) lines += `<div class="hero-line"><span>Extras por hacer (${fmtHours(c.hoursPending)} h)</span><b>+ ${fmtMoney(c.extrasPending)}</b></div>`;
-    if (c.advance > 0) lines += `<div class="hero-line strong"><span>Total − adelanto (${fmtMoney(c.advance)})</span><b>${fmtMoney(c.net)}</b></div>`;
+    if (c.advance > 0) lines += `<div class="hero-line"><span>Subtotal antes del adelanto</span><b>${fmtMoney(c.total)}</b></div><div class="hero-line strong"><span>− Adelanto que ya cobraste</span><b>− ${fmtMoney(c.advance)}</b></div>`;
     const hero = `<div class="hero-card">
-        <div class="hero-label">Total del mes</div>
-        <div class="hero-amount">${fmtMoney(c.total)}</div>
+        <div class="hero-label">${c.advance > 0 ? 'Total del mes · ya sin el adelanto' : 'Total del mes'}</div>
+        <div class="hero-amount">${fmtMoney(c.advance > 0 ? c.net : c.total)}</div>
         <div class="hero-lines">${lines}</div>
         ${noValues ? `<div class="hero-hint"><i class="fas fa-circle-info"></i> Cargá tu valor hora y sueldo base en Ajustes (tocá tu perfil, arriba a la izquierda).</div>` : ''}
     </div>`;
@@ -630,13 +630,13 @@ function renderMoney() {
     const box = $('moneyContainer');
     const item = (x, kind) => `<div class="fin-item ${kind === 'exp' && x.paid ? 'paid' : ''}">
         ${kind === 'exp' ? `<button class="sd-btn sd-check ${x.paid ? 'checked' : ''}" data-act="pay" data-id="${x.id}" aria-label="${x.paid ? 'Marcar como no pagado' : 'Marcar como pagado'}"><i class="fas fa-check"></i></button>` : `<button class="sd-btn sd-check ${x.received ? 'checked' : ''}" data-act="recv" data-id="${x.id}" aria-label="Marcar como cobrado"><i class="fas fa-check"></i></button>`}
-        <span class="fin-name">${escapeHtml(x.name || 'Sin nombre')}</span>
+        <span class="fin-name">${escapeHtml(x.name || 'Sin nombre')}${kind === 'exp' && x.due ? ` <small class="due ${dueState(x)}">vence el ${x.due}</small>` : ''}</span>
         <span class="fin-amt">${fmtMoney(x.amount)}</span>
         <button class="sd-btn sd-edit" data-act="item-edit" data-kind="${kind}" data-id="${x.id}" aria-label="Editar"><i class="fas fa-pen"></i></button>
         <button class="sd-btn sd-delete" data-act="item-del" data-kind="${kind}" data-id="${x.id}" aria-label="Eliminar"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 
-    const left = `<div class="card">
+    let left = `<div class="card">
         <div class="card-head"><h3>Me quedan</h3><span class="card-aside">${c.left < 0 ? 'Te falta plata' : 'Después de pagar todo'}</span></div>
         <div class="fin-big ${c.left < 0 ? 'neg' : ''}">${fmtMoney(c.left)}</div>
         <div class="fin-eq">Cobro ${fmtMoney(c.total)} + ingresos ${fmtMoney(c.incTotal)} − gastos ${fmtMoney(c.expTotal)}</div>
@@ -647,6 +647,7 @@ function renderMoney() {
         <div class="fin-actions"><button class="mini-btn ${c.salaryReceived ? 'primary' : ''}" data-act="salary-toggle"><i class="fas fa-check"></i> ${c.salaryReceived ? 'Sueldo cobrado' : 'Ya cobré el sueldo'}</button></div>
         ${c.hoursPending > 0 && c.rate ? `<div class="fin-sub"><span>Si hacés las ${fmtHours(c.hoursPending)} h pendientes</span><span>+ ${fmtMoney(c.extrasPending)}</span></div>` : ''}
     </div>`;
+    left += cuotasCard(c);
 
     const agCard = (() => {
         const fmtMes = k => monthName(parseKey(k).month).toLowerCase();
@@ -668,7 +669,7 @@ function renderMoney() {
 
     const exp = `<div class="card">
         <div class="card-head"><h3>Gastos</h3><button class="mini-btn primary" data-act="item-add" data-kind="exp"><i class="fas fa-plus"></i> Agregar</button></div>
-        ${c.expenses.length ? c.expenses.map(x => item(x, 'exp')).join('') : `<div class="fin-empty">Todavía no cargaste gastos en este período.</div>`}
+        ${c.expenses.length ? (c.expenses.some(x => x.due) ? [...c.expenses].sort((a, b) => (a.paid - b.paid) || ((a.due || 99) - (b.due || 99))) : c.expenses).map(x => item(x, 'exp')).join('') : `<div class="fin-empty">Todavía no cargaste gastos en este período.</div>`}
         ${c.expenses.length ? `<div class="fin-total"><span>Total gastos</span><span>${fmtMoney(c.expTotal)}</span></div>
             <div class="fin-sub"><span>Todavía debo pagar</span><span>${fmtMoney(c.expPending)}</span></div>` : ''}
         <div class="fin-actions"><button class="mini-btn" data-act="copy-prev"><i class="fas fa-copy"></i> Copiar gastos del período anterior</button></div>
@@ -693,6 +694,7 @@ function openItemModal(kind, id) {
     $('itemModalTitle').textContent = (it ? 'Editar ' : 'Agregar ') + (kind === 'exp' ? 'gasto' : 'ingreso');
     $('itemName').value = it ? it.name : '';
     $('itemAmount').value = it ? numToInput(it.amount) : '';
+    $('itemDue').value = it && it.due ? it.due : ''; $('itemDueGroup').style.display = kind === 'exp' ? '' : 'none';
     $('itemError').style.display = 'none';
     // sugerencias con los nombres que ya usaste
     const names = new Set();
@@ -702,7 +704,7 @@ function openItemModal(kind, id) {
     setTimeout(() => $('itemName').focus(), 120);
 }
 function closeItemModal() { editingItem = null; $('itemModal').style.display = 'none'; }
-function saveItemModal() {
+async function saveItemModal() {
     if (!editingItem) return;
     const name = $('itemName').value.trim();
     const amount = parseNum($('itemAmount').value);
@@ -711,15 +713,18 @@ function saveItemModal() {
     if (amount == null || Number.isNaN(amount) || amount < 0) { err.textContent = 'Escribí un valor válido (por ejemplo 1500).'; err.style.display = 'block'; return; }
     const p = ensurePeriod(periodKey);
     const list = editingItem.kind === 'exp' ? p.expenses : p.incomes;
+    const due = Math.min(31, Math.max(0, parseInt($('itemDue').value, 10) || 0));
     if (editingItem.id != null) {
         const it = list.find(x => x.id === editingItem.id);
-        if (it) { it.name = name; it.amount = amount; }
+        if (it) { it.name = name; it.amount = amount; if (editingItem.kind === 'exp') it.due = due; }
     } else {
         const it = { id: nextId(list), name, amount };
-        if (editingItem.kind === 'exp') it.paid = false;
+        if (editingItem.kind === 'exp') { it.paid = false; it.due = due; }
         list.push(it);
     }
+    const isAdv = editingItem.kind === 'inc' && editingItem.id == null && /adelanto/i.test(name) && amount > 0;
     saveData(); closeItemModal(); renderAll(); showToast('Guardado');
+    if (isAdv) await chainAdvance(amount);
 }
 async function deleteItem(kind, id) {
     const ok = await showConfirm({ title: kind === 'exp' ? '¿Eliminar este gasto?' : '¿Eliminar este ingreso?', message: 'Después podés deshacerlo.', okText: 'Eliminar', danger: true });
@@ -741,6 +746,30 @@ function togglePaid(id) {
 }
 
 // "CELU 16 de 18" → "CELU 17 de 18"; si ya era la última cuota, no se copia
+function dueState(x) {
+    if (!x.due || x.paid) return '';
+    const { year, month } = parseKey(periodKey), d = new Date(year, month, Math.min(x.due, new Date(year, month + 1, 0).getDate())), t = new Date(); t.setHours(0, 0, 0, 0);
+    const diff = Math.round((d - t) / 864e5); return diff < 0 ? 'late' : diff <= 3 ? 'soon' : '';
+}
+function cuotasCard(c) {
+    const rows = [];
+    c.expenses.forEach(x => { const m = (x.name || '').match(/^(.*?)(\d+)\s+de\s+(\d+)\s*$/i); if (m) rows.push({ name: m[1].trim() || x.name, cur: +m[2], tot: +m[3], amt: x.amount, left: +m[3] - +m[2] }); });
+    if (!rows.length) return '';
+    const { year, month } = parseKey(c.key), debt = rows.reduce((s, r) => s + r.left * r.amt, 0), free = {};
+    rows.forEach(r => { free[r.left] = (free[r.left] || 0) + r.amt; });
+    let acc = 0;
+    const frees = Object.keys(free).map(Number).sort((a, b) => a - b).map(k => { acc += free[k]; const d = new Date(year, month + k + 1, 1); return `<div class="fin-sub"><span>Desde ${monthName(d.getMonth()).toLowerCase()} ${d.getFullYear()} liberás</span><span>+ ${fmtMoney(acc)} por mes</span></div>`; }).join('');
+    return `<div class="card"><div class="card-head"><h3>Cuotas</h3><span class="card-aside">${rows.length} activas</span></div>
+        ${rows.map(r => `<div class="fin-sub"><span>${escapeHtml(r.name)} ${r.cur}/${r.tot} · ${r.left ? 'faltan ' + r.left : 'es la última'}</span><span>${fmtMoney(r.left * r.amt)}</span></div>`).join('')}
+        <div class="fin-total"><span>Falta pagar en cuotas (después de este mes)</span><span>${fmtMoney(debt)}</span></div>${frees}</div>`;
+}
+async function chainAdvance(amount) {
+    const nk = shiftKey(periodKey, 1);
+    const ok = await showConfirm({ title: '¿Descontarlo del próximo cobro?', message: `Se agrega un gasto "ADELANTO ${fmtMoney(amount)}" en el período que se cobra en ${monthName(parseKey(nk).month).toLowerCase()}, para que se descuente.`, okText: 'Agregar', cancelText: 'No' });
+    if (!ok) return;
+    const np = ensurePeriod(nk); np.expenses.push({ id: nextId(np.expenses), name: 'ADELANTO', amount, paid: false, due: 0 });
+    saveData(); renderAll(); showToast('Descuento agregado al próximo período');
+}
 function nextInstallment(name) {
     const m = name.match(/^(.*?)(\d+)\s+de\s+(\d+)\s*$/i);
     if (!m) return name;
@@ -762,7 +791,7 @@ async function copyPrevExpenses() {
         if (/adelanto/i.test(x.name)) { skipped++; continue; }
         const name = nextInstallment(x.name);
         if (name === null) { skipped++; continue; }
-        p.expenses.push({ id: nextId(p.expenses), name, amount: x.amount, paid: false });
+        p.expenses.push({ id: nextId(p.expenses), name, amount: x.amount, paid: false, due: x.due || 0 });
         n++;
     }
     saveData(); renderAll();
