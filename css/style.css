@@ -838,3 +838,8 @@
 /* Casilla de hecha/pagada: una regla vieja (.sd-btn) le sacaba el borde y el fondo; acá queda asegurado */
 .sd-btn.sd-check { border: 2px solid var(--text-faint); background: transparent; color: transparent; }
 .sd-btn.sd-check.checked { border-color: #10B981; background: #10B981; color: #fff; }
+
+/* Deshacer en el aviso */
+.toast.has-action { pointer-events: auto; display: flex; align-items: center; gap: 14px; text-align: left; }
+.toast-undo { background: none; border: 0; color: #8FC1FF; font: inherit; font-weight: 700; padding: 4px 2px; cursor: pointer; text-transform: uppercase; letter-spacing: .3px; font-size: 13px; }
+[data-theme="dark"] .toast-undo { color: #1E5AA8; }
