@@ -156,6 +156,7 @@ let toastTimeout = null;
 function showToast(msg, ms = 2400) {
     const el = $('toast');
     if (!el) return;
+    el.classList.remove('has-action');
     el.textContent = msg;
     el.classList.add('show');
     clearTimeout(toastTimeout);
@@ -231,8 +232,9 @@ function loadData() {
     return emptyData();
 }
 function saveData() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); localStorage.setItem('hxyo_cloud_ts', String(Date.now())); }
     catch (e) { console.error(e); showToast('No se pudo guardar en este dispositivo'); }
+    cloudQueuePush();
 }
 function nextId(list) { return list.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1; }
 
@@ -346,11 +348,12 @@ function toggleDone(id) {
     if (e) { e.done = !e.done; saveData(); renderAll(); }
 }
 function deleteEntry(id) {
+    snapshot();
     data.entries = data.entries.filter(e => e.id !== id);
-    saveData(); renderAll(); showToast('Extra eliminada');
+    saveData(); renderAll(); showUndoToast('Extra eliminada');
 }
 async function confirmDeleteEntry(id) {
-    const ok = await showConfirm({ title: '¿Eliminar esta extra?', message: 'Esta acción no se puede deshacer.', okText: 'Eliminar', danger: true });
+    const ok = await showConfirm({ title: '¿Eliminar esta extra?', message: 'Después podés deshacerlo.', okText: 'Eliminar', danger: true });
     if (ok) deleteEntry(id);
 }
 
@@ -573,7 +576,7 @@ function renderSummary() {
     </div>`;
 
     box.innerHTML = hero + hoursCard + listCard
-        + `<div class="export-row"><button class="btn-secondary" data-act="export-csv"><i class="fas fa-file-excel"></i> Bajar este período (Excel)</button></div>
+        + `<div class="export-row"><button class="btn-secondary" data-act="export-pdf"><i class="fas fa-file-pdf"></i> Compartir PDF</button><button class="btn-secondary" data-act="export-csv"><i class="fas fa-file-excel"></i> Bajar Excel</button></div>
            <div class="summary-footer"></div>`;
 }
 
@@ -583,8 +586,9 @@ async function markAllDone() {
     if (!pend.length) return;
     const ok = await showConfirm({ title: '¿Marcar todas como hechas?', message: `Se marcan ${pend.length} ${pend.length === 1 ? 'extra' : 'extras'} de este período.`, okText: 'Marcar todas', warn: true });
     if (!ok) return;
+    snapshot();
     pend.forEach(e => { e.done = true; });
-    saveData(); renderAll(); showToast('Listo');
+    saveData(); renderAll(); showUndoToast('Listo, quedaron como hechas');
 }
 
 // ============================================================
@@ -708,12 +712,13 @@ function saveItemModal() {
     saveData(); closeItemModal(); renderAll(); showToast('Guardado');
 }
 async function deleteItem(kind, id) {
-    const ok = await showConfirm({ title: kind === 'exp' ? '¿Eliminar este gasto?' : '¿Eliminar este ingreso?', message: 'Esta acción no se puede deshacer.', okText: 'Eliminar', danger: true });
+    const ok = await showConfirm({ title: kind === 'exp' ? '¿Eliminar este gasto?' : '¿Eliminar este ingreso?', message: 'Después podés deshacerlo.', okText: 'Eliminar', danger: true });
     if (!ok) return;
+    snapshot();
     const p = ensurePeriod(periodKey);
     if (kind === 'exp') p.expenses = p.expenses.filter(x => x.id !== id);
     else p.incomes = p.incomes.filter(x => x.id !== id);
-    saveData(); renderAll();
+    saveData(); renderAll(); showUndoToast('Eliminado');
 }
 function togglePaid(id) {
     const x = ensurePeriod(periodKey).expenses.find(y => y.id === id);
@@ -736,6 +741,7 @@ async function copyPrevExpenses() {
         const ok = await showConfirm({ title: '¿Copiar igual?', message: 'Este período ya tiene gastos. Se agregan los del período anterior a los que ya hay.', okText: 'Copiar', warn: true });
         if (!ok) return;
     }
+    snapshot();
     let n = 0, skipped = 0;
     for (const x of prev.expenses) {
         if (/adelanto/i.test(x.name)) { skipped++; continue; }
@@ -745,7 +751,7 @@ async function copyPrevExpenses() {
         n++;
     }
     saveData(); renderAll();
-    showToast(`Copiados ${n} ${n === 1 ? 'gasto' : 'gastos'}${skipped ? ` (${skipped} no se copian: cuotas terminadas o adelantos)` : ''}`, 3400);
+    showUndoToast(`Copiados ${n} ${n === 1 ? 'gasto' : 'gastos'}${skipped ? ` (${skipped} no se copian: cuotas terminadas o adelantos)` : ''}`);
 }
 
 // ============================================================
@@ -855,6 +861,7 @@ async function restoreFromFile(file) {
         okText: 'Cargar copia', warn: true
     });
     if (!ok) return;
+    snapshot();
     data = incoming;
     saveData();
     applyTheme(data.settings.theme);
@@ -862,11 +869,12 @@ async function restoreFromFile(file) {
     applyProfileToHeader();
     closeSettings(true);
     renderAll();
-    showToast('Copia cargada');
+    showUndoToast('Copia cargada');
 }
 async function wipeAll() {
-    const ok = await showConfirm({ title: '¿Borrar todo?', message: 'Se borran todas las extras, gastos, ingresos y ajustes de este dispositivo. No se puede deshacer.', okText: 'Borrar todo', danger: true });
+    const ok = await showConfirm({ title: '¿Borrar todo?', message: 'Se borran todas las extras, gastos, ingresos y ajustes de este dispositivo.' + (cloud.user ? ' La copia en la nube también se borra.' : '') + ' Si te arrepentís, tenés unos segundos para deshacer.', okText: 'Borrar todo', danger: true });
     if (!ok) return;
+    snapshot();
     data = emptyData();
     saveData();
     applyTheme(THEME_DEFAULT);
@@ -874,7 +882,7 @@ async function wipeAll() {
     applyProfileToHeader();
     closeSettings(true);
     renderAll();
-    showToast('Todo borrado');
+    showUndoToast('Todo borrado');
 }
 
 // ============================================================
@@ -905,7 +913,7 @@ function openSettings() {
     $('setGoal').value = numToInput(s.goal); $('setMin').value = numToInput(s.min);
     $('setWorkStart').value = s.workStart || '';
     pendingTheme = s.theme || THEME_DEFAULT;
-    renderThemeSwatches(); renderModeSeg(); updateSettingsAvatar();
+    renderThemeSwatches(); renderModeSeg(); updateSettingsAvatar(); renderCloud();
     $('settingsError').style.display = 'none';
     $('settingsBody').scrollTop = 0;
     $('settingsModal').style.display = 'flex';
@@ -964,6 +972,180 @@ function saveSettings() {
     $('settingsModal').style.display = 'none';
     renderAll();
     showToast('Ajustes guardados');
+}
+
+// ============================================================
+//  DESHACER (guarda una foto de todo antes de una acción grande)
+// ============================================================
+let undoSnap = null;
+function snapshot() { try { undoSnap = JSON.stringify(data); } catch (_) { undoSnap = null; } }
+function showUndoToast(msg, ms = 6000) {
+    const el = $('toast'); if (!el) return;
+    el.innerHTML = `<span>${escapeHtml(msg)}</span><button type="button" class="toast-undo" id="toastUndo">Deshacer</button>`;
+    el.classList.add('show', 'has-action');
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => { el.classList.remove('show', 'has-action'); undoSnap = null; }, ms);
+}
+function undoLast() {
+    if (!undoSnap) return;
+    data = normalizeData(JSON.parse(undoSnap)); undoSnap = null;
+    saveData(); applyTheme(data.settings.theme); applyProfileToHeader(); renderAll();
+    showToast('Deshecho');
+}
+
+// ============================================================
+//  PDF DEL PERÍODO (se arma en el celu y se comparte con el menú del sistema)
+// ============================================================
+let h2pPromise = null;
+function loadScript(src) {
+    return new Promise(res => {
+        const s = document.createElement('script'); s.src = src; s.async = true;
+        s.onload = () => res(true); s.onerror = () => { s.remove(); res(false); };
+        document.head.appendChild(s);
+    });
+}
+async function loadHtml2pdf() {
+    if (window.html2pdf) return true;
+    if (!h2pPromise) h2pPromise = loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js').then(ok => { if (!ok) h2pPromise = null; return ok; });
+    return h2pPromise;
+}
+function pdfHtml(c) {
+    const { year, month } = parseKey(c.key), r = c.range, color = data.settings.theme || THEME_DEFAULT;
+    const td = 'padding:6px 4px;border-bottom:1px solid #e5e7eb;font-size:12px;', R = 'text-align:right;white-space:nowrap;';
+    const th = 'padding:6px 4px;border-bottom:2px solid #cbd5e1;font-size:11px;color:#64748b;text-align:left;';
+    const row = (a, b, bold) => `<tr><td style="${td}${bold ? 'font-weight:700;' : ''}">${a}</td><td style="${td}${R}${bold ? 'font-weight:700;' : ''}">${b}</td></tr>`;
+    const sec = (title, body) => `<div style="page-break-inside:avoid;margin-top:18px;"><h3 style="margin:0 0 6px;font-size:14px;color:${color};">${title}</h3>${body}</div>`;
+    const tbl = rows => `<table style="width:100%;border-collapse:collapse;">${rows}</table>`;
+    let cobro = row('Sueldo base', fmtMoney(c.base)) + row(`Extras hechas (${fmtHours(c.hoursDone)} h)`, fmtMoney(c.extras));
+    if (c.night) cobro += row(`Nocturnas (${fmtHours(c.night)} h)`, fmtMoney(c.nightPay));
+    if (c.weekend) cobro += row(`Fin de semana (${fmtHours(c.weekend)} h)`, fmtMoney(c.weekendPay));
+    cobro += row('Total del mes', fmtMoney(c.total), true);
+    if (c.advance > 0) cobro += row(`Total − adelanto (${fmtMoney(c.advance)})`, fmtMoney(c.net), true);
+    const extras = c.list.length
+        ? `<table style="width:100%;border-collapse:collapse;"><tr><th style="${th}">Día</th><th style="${th}">Horario</th><th style="${th}${R}">Horas</th><th style="${th}${R}">Valor</th><th style="${th}">Estado</th></tr>`
+          + c.list.map(e => `<tr><td style="${td}">${weekdayShort(e.date)} ${e.date.slice(8)}/${e.date.slice(5, 7)}</td><td style="${td}">${e.start} – ${e.end}</td><td style="${td}${R}">${fmtHours(entryHours(e))}</td><td style="${td}${R}">${c.rate ? fmtMoney(entryHours(e) * c.rate) : '—'}</td><td style="${td}">${e.done ? 'Hecha' : 'Por hacer'}</td></tr>`).join('') + '</table>'
+        : '<p style="font-size:12px;color:#64748b;">Sin extras en este período.</p>';
+    const gastos = c.expenses.length ? tbl(c.expenses.map(x => row(escapeHtml(x.name || 'Sin nombre') + (x.paid ? ' <small style="color:#16a34a;">· pagado</small>' : ''), fmtMoney(x.amount))).join('') + row('Total gastos', fmtMoney(c.expTotal), true) + row('Todavía debo pagar', fmtMoney(c.expPending))) : '';
+    let ing = c.incomes.map(x => row(escapeHtml(x.name || 'Sin nombre'), fmtMoney(x.amount))).join('');
+    if (c.agAmount) ing += row('Aguinaldo (automático)', fmtMoney(c.agAmount));
+    const prog = `<p style="font-size:12px;margin:8px 0 0;">Horas: <b>${fmtHours(c.hoursAll)}</b> de ${fmtHours(c.goal)} (mínimo ${fmtHours(c.min)}). Hechas ${fmtHours(c.hoursDone)}, por hacer ${fmtHours(c.hoursPending)}.</p>`;
+    return `<div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;background:#fff;padding:6px;">
+        <div style="border-bottom:3px solid ${color};padding-bottom:10px;"><div style="font-size:22px;font-weight:700;color:${color};">Mis extras · ${monthName(month)} ${year}</div>
+        <div style="font-size:12px;color:#64748b;margin-top:3px;">Extras del ${fmtDayMonth(r.startDate)} al ${fmtDayMonth(r.endDate)}${data.settings.name ? ' · ' + escapeHtml(data.settings.name) : ''}</div></div>
+        <div style="margin-top:14px;padding:14px;border-radius:10px;background:${color};color:#fff;"><div style="font-size:12px;opacity:.85;">Total del mes</div><div style="font-size:28px;font-weight:700;">${fmtMoney(c.total)}</div></div>
+        ${sec('Lo que cobro', tbl(cobro) + prog)}${sec(`Extras (${c.list.length})`, extras)}${gastos ? sec('Gastos', gastos) : ''}${ing ? sec('Ingresos', tbl(ing + row('Total ingresos', fmtMoney(c.incTotal), true))) : ''}
+        ${sec('Me quedan', tbl(row('Cobro + ingresos − gastos', `<span style="font-size:16px;color:${c.left < 0 ? '#dc2626' : '#16a34a'};">${fmtMoney(c.left)}</span>`, true)))}
+        <p style="margin-top:22px;font-size:10px;color:#94a3b8;">Generado el ${new Date().toLocaleDateString('es-UY')} con Mis extras.</p></div>`;
+}
+async function exportPdf() {
+    const c = calc(periodKey), { year, month } = parseKey(periodKey);
+    showToast('Armando el PDF…', 6000);
+    if (!(await loadHtml2pdf())) { showToast('No se pudo cargar el generador de PDF. Revisá la conexión.', 3500); return; }
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:0;top:0;width:700px;background:#fff;z-index:-1;';
+    wrap.innerHTML = pdfHtml(c); document.body.appendChild(wrap);
+    try {
+        const blob = await window.html2pdf().set({
+            margin: 10, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'] }
+        }).from(wrap.firstElementChild).outputPdf('blob');
+        await downloadFile(`extras-${year}-${String(month + 1).padStart(2, '0')}.pdf`, blob, 'application/pdf');
+        showToast('PDF listo');
+    } catch (e) { console.error(e); showToast('No se pudo armar el PDF'); }
+    finally { wrap.remove(); }
+}
+
+// ============================================================
+//  COPIA EN LA NUBE (opcional): Google + Firestore. Un documento por persona: extras/{uid}
+//  Sin configurar (firebase-config.js vacío) la app funciona igual, solo en este dispositivo.
+// ============================================================
+const CLOUD_TS_KEY = 'hxyo_cloud_ts';        // cuándo cambió por última vez lo de este dispositivo
+const CLOUD_SYNCED_KEY = 'hxyo_cloud_synced'; // versión de la nube con la que quedó igual la última vez
+const FB_VER = '10.13.2';
+const cloud = { ready: false, user: null, db: null, auth: null, status: 'ok', timer: null, busy: false };
+const lsNum = k => Number(localStorage.getItem(k)) || 0;
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+function cloudConfigured() { const c = window.MIS_EXTRAS_FIREBASE; return !!(c && c.apiKey && c.projectId && c.appId); }
+function hasLocalData() { const s = data.settings; return data.entries.length > 0 || Object.keys(data.periods).length > 0 || s.rate > 0 || s.base > 0; }
+function cloudRef() { return cloud.db.collection('extras').doc(cloud.user.uid); }
+function cloudStatus(s) { cloud.status = s; renderCloud(); }
+function renderCloud() {
+    const t = $('cloudTitle'); if (!t) return;
+    const sub = $('cloudSub'), hint = $('cloudHint');
+    if (!cloudConfigured()) { t.textContent = 'Copia en la nube'; sub.textContent = 'Falta configurar Firebase (archivo firebase-config.js).'; hint.textContent = ''; return; }
+    if (!cloud.user) { t.textContent = 'Entrar con Google'; sub.textContent = cloud.ready ? 'Guarda tus datos y los pasa de un celu a otro.' : 'Cargando… (necesita internet)'; hint.textContent = 'Sin entrar, todo sigue funcionando solo en este dispositivo.'; return; }
+    const st = { ok: 'al día', syncing: 'sincronizando…', offline: 'sin conexión, se sube cuando vuelva', error: 'no se pudo sincronizar' }[cloud.status] || '';
+    t.textContent = 'Nube activada'; sub.textContent = `${cloud.user.email} · ${st}`;
+    hint.textContent = 'Se guarda sola cada vez que cambiás algo. Tocá para cerrar sesión.';
+}
+async function cloudInit() {
+    renderCloud();
+    if (!cloudConfigured()) return;
+    try {
+        for (const f of ['app', 'auth', 'firestore']) if (!(await loadScript(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${f}-compat.js`))) throw new Error('sin internet');
+        firebase.initializeApp(window.MIS_EXTRAS_FIREBASE);
+        cloud.auth = firebase.auth(); cloud.db = firebase.firestore(); cloud.ready = true;
+        cloud.auth.onAuthStateChanged(u => { cloud.user = u; renderCloud(); if (u) cloudCheck(); });
+    } catch (e) { console.warn('Nube no disponible', e); }
+    renderCloud();
+}
+async function cloudButton() {
+    if (!cloudConfigured()) { showToast('Primero hay que configurar Firebase', 3000); return; }
+    if (!cloud.ready) { showToast('Todavía cargando, probá en un momento'); return; }
+    if (!cloud.user) {
+        const p = new firebase.auth.GoogleAuthProvider();
+        try { await cloud.auth.signInWithPopup(p); }
+        catch (e) {
+            if (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment') { try { await cloud.auth.signInWithRedirect(p); } catch (_) {} }
+            else if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') showToast('No se pudo entrar: ' + (e.code || 'error'), 3500);
+        }
+        return;
+    }
+    const ok = await showConfirm({ title: '¿Cerrar sesión?', message: 'Tus datos siguen en este celu y en la nube. Dejan de sincronizarse hasta que vuelvas a entrar.', okText: 'Cerrar sesión', cancelText: 'Volver', warn: true });
+    if (ok) { await cloud.auth.signOut(); renderCloud(); }
+}
+async function cloudPushNow(prevJson) {
+    let ts = lsNum(CLOUD_TS_KEY); if (!ts) { ts = Date.now(); localStorage.setItem(CLOUD_TS_KEY, String(ts)); }
+    cloudStatus('syncing');
+    const doc = { json: JSON.stringify(data), ts, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+    if (prevJson) doc.prev = prevJson; // si pisás lo que había en la nube, queda la versión anterior guardada
+    await withTimeout(cloudRef().set(doc), 10000);
+    localStorage.setItem(CLOUD_SYNCED_KEY, String(ts));
+    cloudStatus('ok');
+}
+function cloudQueuePush() {
+    if (!cloud.user || !cloud.db) return;
+    clearTimeout(cloud.timer);
+    cloud.timer = setTimeout(async () => {
+        if (cloud.busy) { cloudQueuePush(); return; }
+        cloud.busy = true;
+        try { await cloudPushNow(); } catch (e) { cloudStatus(navigator.onLine ? 'error' : 'offline'); }
+        finally { cloud.busy = false; }
+    }, 1500);
+}
+function cloudApply(c) {
+    data = normalizeData(JSON.parse(c.json));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(CLOUD_TS_KEY, String(c.ts)); localStorage.setItem(CLOUD_SYNCED_KEY, String(c.ts));
+    applyTheme(data.settings.theme); periodKey = currentKey(); applyProfileToHeader(); renderAll();
+}
+async function cloudCheck() {
+    if (!cloud.user || !cloud.db || cloud.busy) return;
+    cloud.busy = true; cloudStatus('syncing');
+    try {
+        const snap = await withTimeout(cloudRef().get({ source: 'server' }), 10000);
+        const ts = lsNum(CLOUD_TS_KEY), sy = lsNum(CLOUD_SYNCED_KEY);
+        const dirty = ts > sy || (sy === 0 && hasLocalData());
+        if (!snap.exists) { if (hasLocalData()) await cloudPushNow(); else cloudStatus('ok'); return; }
+        const c = snap.data();
+        if (c.ts === sy) { if (dirty) await cloudPushNow(); else cloudStatus('ok'); return; } // la nube no cambió
+        if (!dirty) { cloudApply(c); cloudStatus('ok'); showToast('Datos al día desde la nube'); return; } // solo cambió la nube
+        const useCloud = await showConfirm({ title: 'Hay datos distintos en la nube', message: 'Este celu y la nube tienen cambios distintos. ¿Cuáles dejo? Los otros se reemplazan (la versión anterior de la nube queda guardada).', okText: 'Usar los de la nube', cancelText: 'Usar los de este celu', warn: true });
+        if (useCloud) { snapshot(); cloudApply(c); showUndoToast('Datos cargados desde la nube'); }
+        else await cloudPushNow(c.json);
+        cloudStatus('ok');
+    } catch (e) { cloudStatus(navigator.onLine ? 'error' : 'offline'); }
+    finally { cloud.busy = false; }
 }
 
 // ============================================================
@@ -1087,6 +1269,7 @@ function init() {
         if (act === 'mark-all') markAllDone();
         else if (act === 'period-settings') openPeriodModal();
         else if (act === 'export-csv') exportCsv();
+        else if (act === 'export-pdf') exportPdf();
         else handleEntryAction(act, parseInt(el.dataset.id, 10));
     });
     $('periodCancelBtn').addEventListener('click', closePeriodModal);
@@ -1141,6 +1324,13 @@ function init() {
     $('restoreBtn').addEventListener('click', () => $('restoreFile').click());
     $('restoreFile').addEventListener('change', ev => { restoreFromFile(ev.target.files[0]); ev.target.value = ''; });
     $('wipeBtn').addEventListener('click', wipeAll);
+
+    // Deshacer + nube
+    $('toast').addEventListener('click', ev => { if (ev.target.closest('#toastUndo')) undoLast(); });
+    $('cloudBtn').addEventListener('click', cloudButton);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) cloudCheck(); });
+    window.addEventListener('online', cloudCheck);
+    cloudInit();
 
     // Instalar
     $('openInstallHelpBtn').addEventListener('click', () => { closeSettings(); openInstallModal(); });
