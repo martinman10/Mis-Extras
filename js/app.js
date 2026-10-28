@@ -640,15 +640,15 @@ function renderMoney() {
         const ag = c.ag || aguinaldoInfo(nextAguinaldoKey(periodKey));
         if (!ag) return '';
         const here = !!c.ag;
-        const when = ag.daysLeft >= 0 ? `faltan ${ag.daysLeft} ${ag.daysLeft === 1 ? 'día' : 'días'}` : 'fecha límite ya pasada';
         const note = here && ag.manual ? `Ya cargaste un ingreso “Aguinaldo”: se usa ese y no se suma el automático (el calculado sería ${fmtMoney(ag.amount)}).`
             : `Suma de los 6 cobros de ${fmtMes(ag.keys[0])} a ${fmtMes(ag.keys[5])} (${fmtMoney(ag.sum)}) ÷ 12. Es una estimación con lo que tenés cargado.`;
         return `<div class="card">
             <div class="card-head"><h3>${here ? 'Aguinaldo' : 'Próximo aguinaldo'}</h3><span class="card-aside">${ag.dueText}</span></div>
             <div class="fin-big">${fmtMoney(ag.amount)}</div>
             <div class="fin-eq">${note}</div>
-            <div class="fin-sub"><span>Hay que pagártelo hasta el ${ag.dueText} de ${ag.dueDate.getFullYear()}</span><span>${when}</span></div>
-            ${here ? '' : `<div class="fin-sub"><span>Va a entrar solo en el período de ${fmtMes(ag.key)}</span><span></span></div>`}
+            <div class="fin-sub"><span>Fecha límite</span><span>${fmtDayMonth(ag.dueDate)} ${ag.dueDate.getFullYear()}</span></div>
+            <div class="fin-sub"><span>${ag.daysLeft >= 0 ? 'Faltan' : 'Pasó hace'}</span><span>${Math.abs(ag.daysLeft)} ${Math.abs(ag.daysLeft) === 1 ? 'día' : 'días'}</span></div>
+            ${here ? '' : `<div class="fin-sub"><span>Entra en el período de</span><span>${fmtMes(ag.key)}</span></div>`}
         </div>`;
     })();
 
