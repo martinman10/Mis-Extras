@@ -15,7 +15,8 @@ const DEFAULT_SETTINGS = {
     nightRate: 0,   // valor de cada hora nocturna
     weekendRate: 0, // valor de cada hora de fin de semana
     goal: 40,       // objetivo de horas por período
-    min: 30         // mínimo de horas por período
+    min: 30,        // mínimo de horas por período
+    workStart: ''   // 'AAAA-MM': primer mes de cobro (el aguinaldo no cuenta meses anteriores)
 };
 const FROZEN_FIELDS = ['rate', 'base', 'nightRate', 'weekendRate'];
 
@@ -268,9 +269,41 @@ function ensurePeriod(key) {
 function byDateTime(a, b) { return (a.date + a.start).localeCompare(b.date + b.start); }
 function sumBy(list, fn) { return list.reduce((s, x) => s + fn(x), 0); }
 
+// ============================================================
+//  AGUINALDO (Uruguay): dos medios aguinaldos por año.
+//  Junio: remuneraciones de dic–may, se paga hasta el 30/6.
+//  Diciembre: remuneraciones de jun–nov, se paga hasta el 20/12.
+//  Medio aguinaldo = suma de lo ganado en el semestre ÷ 12.
+//  Acá: los 6 períodos que se cobran de ene–jun (o jul–dic), cada uno = base + extras hechas + nocturnas + finde.
+// ============================================================
+const AGUINALDO_DUE = { 5: { day: 30, text: '30 de junio' }, 11: { day: 20, text: '20 de diciembre' } };
+function periodTotal(key) {
+    const p = getPeriod(key), s = data.settings, r = periodRange(key);
+    const eff = f => (p[f] > 0 ? p[f] : s[f]);
+    const hDone = sumBy(data.entries.filter(e => e.done && e.date >= r.start && e.date <= r.end), entryHours);
+    return eff('base') + hDone * eff('rate') + (p.night || 0) * eff('nightRate') + (p.weekend || 0) * eff('weekendRate');
+}
+function aguinaldoInfo(key) {
+    const { year, month } = parseKey(key);
+    const due = AGUINALDO_DUE[month];
+    if (!due) return null;
+    const ws = data.settings.workStart || '';
+    const keys = [-5, -4, -3, -2, -1, 0].map(d => shiftKey(key, d));
+    const sum = sumBy(keys, k => (ws && k < ws) ? 0 : periodTotal(k));
+    const dueDate = new Date(year, month, due.day);
+    const manual = (getPeriod(key).incomes || []).some(x => /aguinaldo/i.test(x.name));
+    return { key, amount: Math.round(sum / 12 * 100) / 100, sum, keys, dueDate, dueText: due.text, manual,
+        daysLeft: Math.round((dueDate - hoyDate()) / 86400000) };
+}
+function nextAguinaldoKey(fromKey) {
+    for (let d = 0; d <= 6; d++) { const k = shiftKey(fromKey, d); if (AGUINALDO_DUE[parseKey(k).month]) return k; }
+    return null;
+}
+function daysText(n) { return n === 0 ? 'hoy' : n === 1 ? 'mañana' : n > 0 ? `en ${n} días` : `hace ${-n} ${n === -1 ? 'día' : 'días'}`; }
+
 function calc(key) {
     const p = getPeriod(key), s = data.settings;
-    const eff = f => (p[f] != null ? p[f] : s[f]);
+    const eff = f => (p[f] > 0 ? p[f] : s[f]); // 0 en un período = sin cargar → vale lo de Ajustes
     const r = periodRange(key);
     const list = data.entries.filter(e => e.date >= r.start && e.date <= r.end).sort(byDateTime);
     const hoursAll = sumBy(list, entryHours);
@@ -284,13 +317,14 @@ function calc(key) {
     const goal = p.goal != null ? p.goal : s.goal;
     const min = p.min != null ? p.min : s.min;
     const expenses = p.expenses || [], incomes = p.incomes || [];
-    const expTotal = sumBy(expenses, x => x.amount), incTotal = sumBy(incomes, x => x.amount);
+    const ag = aguinaldoInfo(key), agAmount = ag && !ag.manual ? ag.amount : 0;
+    const expTotal = sumBy(expenses, x => x.amount), incTotal = sumBy(incomes, x => x.amount) + agAmount;
     const advance = sumBy(expenses.filter(x => /adelanto/i.test(x.name)), x => x.amount);
     return {
         key, range: r, list, hoursAll, hoursDone, hoursPending: hoursAll - hoursDone,
         rate, base, extras, extrasPending, night, weekend, nightPay, weekendPay, total,
         goal, min, remaining: Math.max(0, goal - hoursAll), remainingMin: Math.max(0, min - hoursAll),
-        expenses, incomes, expTotal, incTotal, advance, net: total - advance,
+        expenses, incomes, expTotal, incTotal, ag, agAmount, advance, net: total - advance,
         left: total + incTotal - expTotal,
         expPending: sumBy(expenses.filter(x => !x.paid), x => x.amount)
     };
@@ -353,7 +387,7 @@ let currentMonth = hoyMVD().month;
 let selectedDate = todayStr();
 let currentTab = 'tabCalendar';
 
-function rateFor(ds) { const p = getPeriod(periodKeyOf(ds)); return p.rate != null ? p.rate : data.settings.rate; }
+function rateFor(ds) { const p = getPeriod(periodKeyOf(ds)); return p.rate > 0 ? p.rate : data.settings.rate; }
 function entriesOn(ds) { return data.entries.filter(e => e.date === ds).sort(byDateTime); }
 function dayStatus(ds) {
     const l = entriesOn(ds);
@@ -369,8 +403,12 @@ function renderCalendar() {
     const daysInPrev = new Date(currentYear, currentMonth, 0).getDate();
     const today = todayStr();
     const withOT = new Set(data.entries.map(e => e.date));
+    const sp = periodRange(periodKeyOf(selectedDate || today));
     const cellCls = (ds, extra) => {
         let c = 'day-cell' + (extra || '');
+        c += (ds >= sp.start && ds <= sp.end) ? ' in-cycle' : ' out-cycle';
+        if (ds === sp.start) c += ' p-start';
+        if (ds === sp.end) c += ' p-end';
         if (withOT.has(ds)) { c += ' has-overtime ' + dayStatus(ds); }
         if (ds === today) c += ' today';
         if (ds === selectedDate) c += ' selected';
@@ -395,9 +433,10 @@ function renderCalendar() {
     grid.innerHTML = html;
 
     // El mes en pantalla cae en parte en dos períodos: se avisa cuál es el que corre hoy
-    const cur = periodRange(currentKey());
+    const cur = sp, isCur = periodKeyOf(selectedDate || today) === currentKey();
+    const toClose = Math.round((cur.endDate - hoyDate()) / 86400000);
     $('calLegend').innerHTML = `<span class="lg"><i class="lg-dot pending"></i>Pendiente</span><span class="lg"><i class="lg-dot done"></i>Hecha</span>`
-        + `<span class="lg-cycle">Período actual: ${fmtDayMonth(cur.startDate)} al ${fmtDayMonth(cur.endDate)}</span>`;
+        + `<span class="lg"><i class="lg-dot cyc"></i>Período del ${fmtDayMonth(cur.startDate)} al ${fmtDayMonth(cur.endDate)}${isCur && toClose >= 0 ? ' · cierra ' + daysText(toClose) : ''}</span>`;
     const isThisMonth = currentYear === hoyMVD().year && currentMonth === hoyMVD().month;
     $('todayBarCal').style.display = isThisMonth ? 'none' : 'flex';
     renderDayDetail(selectedDate);
@@ -446,10 +485,13 @@ function renderPeriodNav() {
     const { year, month } = parseKey(periodKey);
     const r = periodRange(periodKey);
     const html = `<button data-pshift="-1" aria-label="Período anterior"><i class="fas fa-chevron-left"></i></button>
-        <span class="month-label">${monthName(month)} <small>${year}</small></span>
+        <span class="month-label range">${fmtDayMonth(r.startDate)} → ${fmtDayMonth(r.endDate)}<small>se cobra en ${monthName(month).toLowerCase()} ${year}</small></span>
         <button data-pshift="1" aria-label="Período siguiente"><i class="fas fa-chevron-right"></i></button>`;
     $('navSummary').innerHTML = html; $('navMoney').innerHTML = html;
-    const sub = `Extras del ${fmtDayMonth(r.startDate)} al ${fmtDayMonth(r.endDate)} · se cobra en ${monthName(month).toLowerCase()}`;
+    const cmp = periodKey === currentKey() ? 0 : (periodKey < currentKey() ? -1 : 1);
+    const left = Math.round((r.endDate - hoyDate()) / 86400000);
+    const sub = cmp === 0 ? `Período en curso · cierra el ${fmtDayMonth(r.endDate)} (${left === 0 ? 'hoy' : left === 1 ? 'mañana' : 'faltan ' + left + ' días'})`
+        : cmp < 0 ? 'Período cerrado' : 'Todavía no empieza';
     $('subSummary').textContent = sub; $('subMoney').textContent = sub;
     const away = periodKey !== currentKey();
     $('todayBarSum').style.display = away ? 'flex' : 'none';
@@ -586,7 +628,29 @@ function renderMoney() {
         <div class="card-head"><h3>Me quedan</h3><span class="card-aside">${c.left < 0 ? 'Te falta plata' : 'Después de pagar todo'}</span></div>
         <div class="fin-big ${c.left < 0 ? 'neg' : ''}">${fmtMoney(c.left)}</div>
         <div class="fin-eq">Cobro ${fmtMoney(c.total)} + ingresos ${fmtMoney(c.incTotal)} − gastos ${fmtMoney(c.expTotal)}</div>
+        <div class="fin-total"><span>Plata del mes (cobro + ingresos)</span><span>${fmtMoney(c.total + c.incTotal)}</span></div>
+        <div class="fin-sub"><span>Ya pagué</span><span>${fmtMoney(c.expTotal - c.expPending)}</span></div>
+        <div class="fin-sub"><span>Todavía debo pagar</span><span>${fmtMoney(c.expPending)}</span></div>
+        <div class="fin-sub"><span>Tengo ahora (después de lo ya pagado)</span><span>${fmtMoney(c.total + c.incTotal - (c.expTotal - c.expPending))}</span></div>
+        ${c.hoursPending > 0 && c.rate ? `<div class="fin-sub"><span>Si hacés las ${fmtHours(c.hoursPending)} h pendientes</span><span>+ ${fmtMoney(c.extrasPending)}</span></div>` : ''}
     </div>`;
+
+    const agCard = (() => {
+        const fmtMes = k => monthName(parseKey(k).month).toLowerCase();
+        const ag = c.ag || aguinaldoInfo(nextAguinaldoKey(periodKey));
+        if (!ag) return '';
+        const here = !!c.ag;
+        const when = ag.daysLeft >= 0 ? `faltan ${ag.daysLeft} ${ag.daysLeft === 1 ? 'día' : 'días'}` : 'fecha límite ya pasada';
+        const note = here && ag.manual ? `Ya cargaste un ingreso “Aguinaldo”: se usa ese y no se suma el automático (el calculado sería ${fmtMoney(ag.amount)}).`
+            : `Suma de los 6 cobros de ${fmtMes(ag.keys[0])} a ${fmtMes(ag.keys[5])} (${fmtMoney(ag.sum)}) ÷ 12. Es una estimación con lo que tenés cargado.`;
+        return `<div class="card">
+            <div class="card-head"><h3>${here ? 'Aguinaldo' : 'Próximo aguinaldo'}</h3><span class="card-aside">${ag.dueText}</span></div>
+            <div class="fin-big">${fmtMoney(ag.amount)}</div>
+            <div class="fin-eq">${note}</div>
+            <div class="fin-sub"><span>Hay que pagártelo hasta el ${ag.dueText} de ${ag.dueDate.getFullYear()}</span><span>${when}</span></div>
+            ${here ? '' : `<div class="fin-sub"><span>Va a entrar solo en el período de ${fmtMes(ag.key)}</span><span></span></div>`}
+        </div>`;
+    })();
 
     const exp = `<div class="card">
         <div class="card-head"><h3>Gastos</h3><button class="mini-btn primary" data-act="item-add" data-kind="exp"><i class="fas fa-plus"></i> Agregar</button></div>
@@ -598,11 +662,12 @@ function renderMoney() {
 
     const inc = `<div class="card">
         <div class="card-head"><h3>Ingresos</h3><button class="mini-btn primary" data-act="item-add" data-kind="inc"><i class="fas fa-plus"></i> Agregar</button></div>
-        ${c.incomes.length ? c.incomes.map(x => item(x, 'inc')).join('') : `<div class="fin-empty">Sin otros ingresos en este período.</div>`}
-        ${c.incomes.length ? `<div class="fin-total"><span>Total ingresos</span><span>${fmtMoney(c.incTotal)}</span></div>` : ''}
+        ${c.agAmount ? `<div class="fin-item"><span class="fin-name">Aguinaldo <small>(automático)</small></span><span class="fin-amt">${fmtMoney(c.agAmount)}</span></div>` : ''}
+        ${c.incomes.length ? c.incomes.map(x => item(x, 'inc')).join('') : (c.agAmount ? '' : `<div class="fin-empty">Sin otros ingresos en este período.</div>`)}
+        ${c.incomes.length || c.agAmount ? `<div class="fin-total"><span>Total ingresos</span><span>${fmtMoney(c.incTotal)}</span></div>` : ''}
     </div>`;
 
-    box.innerHTML = left + exp + inc + `<div class="summary-footer"></div>`;
+    box.innerHTML = left + agCard + exp + inc + `<div class="summary-footer"></div>`;
 }
 
 let editingItem = null; // { kind, id|null }
@@ -673,13 +738,14 @@ async function copyPrevExpenses() {
     }
     let n = 0, skipped = 0;
     for (const x of prev.expenses) {
+        if (/adelanto/i.test(x.name)) { skipped++; continue; }
         const name = nextInstallment(x.name);
         if (name === null) { skipped++; continue; }
         p.expenses.push({ id: nextId(p.expenses), name, amount: x.amount, paid: false });
         n++;
     }
     saveData(); renderAll();
-    showToast(`Copiados ${n} ${n === 1 ? 'gasto' : 'gastos'}${skipped ? ` (${skipped} ya terminaron de pagarse)` : ''}`, 3400);
+    showToast(`Copiados ${n} ${n === 1 ? 'gasto' : 'gastos'}${skipped ? ` (${skipped} no se copian: cuotas terminadas o adelantos)` : ''}`, 3400);
 }
 
 // ============================================================
@@ -766,6 +832,7 @@ function exportCsv() {
     rows.push(['Total gastos', '', '', '', num(c.expTotal)]);
     rows.push(['Ingresos', '', '', '', '']);
     c.incomes.forEach(x => rows.push([x.name, '', '', '', num(x.amount)]));
+    if (c.agAmount) rows.push(['Aguinaldo (automático)', '', '', '', num(c.agAmount)]);
     rows.push(['Total ingresos', '', '', '', num(c.incTotal)]);
     rows.push(['Me quedan', '', '', '', num(c.left)]);
     const csv = '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
@@ -836,6 +903,7 @@ function openSettings() {
     $('setRate').value = numToInput(s.rate); $('setBase').value = numToInput(s.base);
     $('setNight').value = numToInput(s.nightRate); $('setWeekend').value = numToInput(s.weekendRate);
     $('setGoal').value = numToInput(s.goal); $('setMin').value = numToInput(s.min);
+    $('setWorkStart').value = s.workStart || '';
     pendingTheme = s.theme || THEME_DEFAULT;
     renderThemeSwatches(); renderModeSeg(); updateSettingsAvatar();
     $('settingsError').style.display = 'none';
@@ -868,7 +936,7 @@ function saveSettings() {
         goal: vals.goal == null ? DEFAULT_SETTINGS.goal : vals.goal, min: vals.min == null ? DEFAULT_SETTINGS.min : vals.min
     };
     // los períodos anteriores al actual conservan los valores que tenían antes del cambio
-    const changed = FROZEN_FIELDS.filter(f => (s[f] || 0) !== next[f]);
+    const changed = FROZEN_FIELDS.filter(f => (s[f] || 0) > 0 && (s[f] || 0) !== next[f]); // solo si ya había un valor cargado
     if (changed.length) {
         const cur = currentKey();
         const keys = new Set(Object.keys(data.periods));
@@ -889,6 +957,7 @@ function saveSettings() {
     });
     Object.assign(s, next);
     s.name = $('setName').value.trim();
+    s.workStart = /^\d{4}-\d{2}$/.test($('setWorkStart').value) ? $('setWorkStart').value : '';
     s.theme = pendingTheme;
     saveData();
     applyProfileToHeader();
