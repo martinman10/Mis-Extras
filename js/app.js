@@ -9,7 +9,7 @@ const INSTALL_KEY = 'hxyo_install_dismissed';
 const CIERRE_DIA = 25; // el período cierra el 25: va del 26 del mes anterior al 25, y se cobra el mes siguiente al cierre
 
 const DEFAULT_SETTINGS = {
-    name: '', theme: '#6C63FF',
+    name: '', theme: '#1E5AA8',
     rate: 0,        // valor de cada hora extra
     base: 0,        // sueldo base
     nightRate: 0,   // valor de cada hora nocturna
@@ -23,14 +23,14 @@ const FROZEN_FIELDS = ['rate', 'base', 'nightRate', 'weekendRate'];
 // ============================================================
 //  APARIENCIA (color + claro/oscuro)
 // ============================================================
-const THEME_DEFAULT = '#6C63FF';
+const THEME_DEFAULT = '#1E5AA8';
 const THEME_COLORS = [
-    { hex: '#6C63FF', name: 'Violeta' },
-    { hex: '#FFF486', name: 'Amarillo' },
-    { hex: '#F01D79', name: 'Fucsia' },
-    { hex: '#FEC3E1', name: 'Rosa' },
-    { hex: '#DAC2FE', name: 'Lila' },
-    { hex: '#4CE5CF', name: 'Turquesa' }
+    { hex: '#1E5AA8', name: 'Azul' },
+    { hex: '#1E3A5F', name: 'Azul marino' },
+    { hex: '#2F6B4F', name: 'Verde bosque' },
+    { hex: '#3F4A59', name: 'Grafito' },
+    { hex: '#0F6B73', name: 'Petróleo' },
+    { hex: '#8C2F39', name: 'Bordó' }
 ];
 function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
 function rgbToHex(c) { return '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase(); }
@@ -40,9 +40,9 @@ function relLum(c) {
     return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
 }
 function contrastRatio(l1, l2) { return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); }
-function onColorFor(hex) { return contrastRatio(relLum(hexToRgb(hex)), 1) >= 4.0 ? '#FFFFFF' : '#1A1A2E'; }
+function onColorFor(hex) { return contrastRatio(relLum(hexToRgb(hex)), 1) >= 4.0 ? '#FFFFFF' : '#1B2330'; }
 
-const DARK_CARD = [28, 29, 42];
+const DARK_CARD = [24, 28, 36];
 function getModePref() { try { return localStorage.getItem(MODE_KEY) || 'auto'; } catch (_) { return 'auto'; } }
 function isDarkNow() {
     const m = getModePref();
@@ -96,7 +96,7 @@ function applyTheme(hex) {
     st.setProperty('--primary-ink-light', rgbToHex(mixRgb(ink, WHITE, 0.25)));
     st.setProperty('--on-primary', onColorFor(hex));
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', dark ? '#12131C' : hex);
+    if (meta) meta.setAttribute('content', dark ? '#0F1217' : hex);
     try { localStorage.setItem(THEME_KEY, hex); } catch (_) {}
 }
 try { applyTheme(localStorage.getItem(THEME_KEY)); } catch (_) {}
