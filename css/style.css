@@ -829,3 +829,8 @@
 .calendar-grid .day-cell.selected.p-start::before, .calendar-grid .day-cell.selected.p-end::before { color: var(--on-primary); }
 .cal-legend .lg-dot.cyc { background: rgba(var(--primary-rgb), 0.35); border-radius: 3px; }
 .fin-name small { color: var(--text-light); font-weight: 400; }
+
+/* Día seleccionado: siempre texto legible (también si es hoy) */
+.calendar-grid .day-cell.selected, .calendar-grid .day-cell.selected.today { background: var(--primary); color: var(--on-primary); }
+/* Casilla sin tildar: círculo vacío (antes se veía un tilde blanco que parecía "hecho") */
+.sd-check:not(.checked) { color: transparent; border-color: var(--text-faint); }
