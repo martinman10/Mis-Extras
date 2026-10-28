@@ -132,7 +132,8 @@ function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function timeToMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
-function entryHours(e) { return Math.max(0, (timeToMin(e.end) - timeToMin(e.start)) / 60); }
+function entryHours(e) { const d = timeToMin(e.end) - timeToMin(e.start); return (d < 0 ? d + 1440 : d) / 60; } // fin menor que inicio = termina al día siguiente
+function endedAt(e) { const [h, m] = e.end.split(':').map(Number), d = parseDate(e.date); return new Date(d.getFullYear(), d.getMonth(), d.getDate() + (e.end < e.start ? 1 : 0), h, m) <= new Date(); }
 function fmtHours(h) { return String(Math.round(h * 100) / 100).replace('.', ','); }
 function fmtMoney(n) {
     n = Math.round(n * 100) / 100;
@@ -218,7 +219,7 @@ function normalizeData(raw) {
             if (!/^\d{4}-\d{2}$/.test(k) || !p || typeof p !== 'object') continue;
             const q = { ...p };
             q.expenses = Array.isArray(p.expenses) ? p.expenses.map((x, i) => ({ id: x.id || i + 1, name: String(x.name || ''), amount: Number(x.amount) || 0, paid: !!x.paid })) : [];
-            q.incomes = Array.isArray(p.incomes) ? p.incomes.map((x, i) => ({ id: x.id || i + 1, name: String(x.name || ''), amount: Number(x.amount) || 0 })) : [];
+            q.incomes = Array.isArray(p.incomes) ? p.incomes.map((x, i) => ({ id: x.id || i + 1, name: String(x.name || ''), amount: Number(x.amount) || 0, received: !!x.received })) : [];
             d.periods[k] = q;
         }
     }
@@ -327,7 +328,8 @@ function calc(key) {
         rate, base, extras, extrasPending, night, weekend, nightPay, weekendPay, total,
         goal, min, remaining: Math.max(0, goal - hoursAll), remainingMin: Math.max(0, min - hoursAll),
         expenses, incomes, expTotal, incTotal, ag, agAmount, advance, net: total - advance,
-        left: total + incTotal - expTotal,
+        left: total + incTotal - expTotal, salaryReceived: !!p.salaryReceived,
+        haveNow: (p.salaryReceived ? total : 0) + sumBy(incomes.filter(x => x.received), x => x.amount) - sumBy(expenses.filter(x => x.paid), x => x.amount),
         expPending: sumBy(expenses.filter(x => !x.paid), x => x.amount)
     };
 }
@@ -336,8 +338,12 @@ function calc(key) {
 //  EXTRAS: alta, edición, baja
 // ============================================================
 function overlapping(date, start, end, exceptId) {
-    const a = timeToMin(start), b = timeToMin(end);
-    return data.entries.some(e => e.id !== exceptId && e.date === date && timeToMin(e.start) < b && a < timeToMin(e.end));
+    const a = timeToMin(start); let b = timeToMin(end); if (b < a) b += 1440;
+    return data.entries.some(e => {
+        if (e.id === exceptId || e.date !== date) return false;
+        const c = timeToMin(e.start); let d = timeToMin(e.end); if (d < c) d += 1440;
+        return c < b && a < d;
+    });
 }
 function addEntry(date, start, end, comment, done) {
     data.entries.push({ id: nextId(data.entries), date, start, end, done: !!done, comment: (comment || '').trim() });
@@ -372,7 +378,7 @@ async function saveEditFromModal() {
     if (!e) return;
     const date = $('editDate').value, start = $('editStart').value, end = $('editEnd').value;
     if (!date || !start || !end) { showToast('Completá fecha y horario'); return; }
-    if (start >= end) { showToast('El inicio debe ser anterior al final'); return; }
+    if (start === end) { showToast('El inicio y el final no pueden ser iguales'); return; }
     if (overlapping(date, start, end, e.id)) {
         const ok = await showConfirm({ title: 'Se pisa con otra extra', message: 'Ya tenés una extra en ese horario. ¿Guardar igual?', okText: 'Guardar igual', warn: true });
         if (!ok) return;
@@ -468,12 +474,14 @@ function renderDayDetail(ds) {
                 ${e.comment ? `<div class="ot-comment"><i class="fas fa-comment-dots"></i> ${escapeHtml(e.comment)}</div>` : ''}
             </div>
             <button class="ot-edit" data-act="edit" data-id="${e.id}" aria-label="Editar"><i class="fas fa-pen"></i></button>
+            <button class="ot-edit" data-act="dup" data-id="${e.id}" aria-label="Duplicar"><i class="fas fa-copy"></i></button>
             <button class="ot-delete" data-act="delete" data-id="${e.id}" aria-label="Eliminar"><i class="fas fa-trash-alt"></i></button>
         </div>`;
     }).join('');
 }
 
 function handleEntryAction(act, id) {
+    if (act === 'dup') { const e = data.entries.find(x => x.id === id); if (e) { switchTab('tabAdd'); $('addStart').value = e.start; $('addEnd').value = e.end; $('addComment').value = e.comment || ''; updateHoursPreview(); showToast('Elegí la fecha y guardá'); } return; }
     if (act === 'toggle') toggleDone(id);
     else if (act === 'edit') openEditModal(id);
     else if (act === 'delete') confirmDeleteEntry(id);
@@ -621,7 +629,7 @@ function renderMoney() {
     const c = calc(periodKey);
     const box = $('moneyContainer');
     const item = (x, kind) => `<div class="fin-item ${kind === 'exp' && x.paid ? 'paid' : ''}">
-        ${kind === 'exp' ? `<button class="sd-btn sd-check ${x.paid ? 'checked' : ''}" data-act="pay" data-id="${x.id}" aria-label="${x.paid ? 'Marcar como no pagado' : 'Marcar como pagado'}"><i class="fas fa-check"></i></button>` : ''}
+        ${kind === 'exp' ? `<button class="sd-btn sd-check ${x.paid ? 'checked' : ''}" data-act="pay" data-id="${x.id}" aria-label="${x.paid ? 'Marcar como no pagado' : 'Marcar como pagado'}"><i class="fas fa-check"></i></button>` : `<button class="sd-btn sd-check ${x.received ? 'checked' : ''}" data-act="recv" data-id="${x.id}" aria-label="Marcar como cobrado"><i class="fas fa-check"></i></button>`}
         <span class="fin-name">${escapeHtml(x.name || 'Sin nombre')}</span>
         <span class="fin-amt">${fmtMoney(x.amount)}</span>
         <button class="sd-btn sd-edit" data-act="item-edit" data-kind="${kind}" data-id="${x.id}" aria-label="Editar"><i class="fas fa-pen"></i></button>
@@ -635,7 +643,8 @@ function renderMoney() {
         <div class="fin-total"><span>Plata del mes (cobro + ingresos)</span><span>${fmtMoney(c.total + c.incTotal)}</span></div>
         <div class="fin-sub"><span>Ya pagué</span><span>${fmtMoney(c.expTotal - c.expPending)}</span></div>
         <div class="fin-sub"><span>Todavía debo pagar</span><span>${fmtMoney(c.expPending)}</span></div>
-        <div class="fin-sub"><span>Tengo ahora (después de lo ya pagado)</span><span>${fmtMoney(c.total + c.incTotal - (c.expTotal - c.expPending))}</span></div>
+        <div class="fin-sub"><span>Tengo ahora (cobrado − pagado)</span><span>${fmtMoney(c.haveNow)}</span></div>
+        <div class="fin-actions"><button class="mini-btn ${c.salaryReceived ? 'primary' : ''}" data-act="salary-toggle"><i class="fas fa-check"></i> ${c.salaryReceived ? 'Sueldo cobrado' : 'Ya cobré el sueldo'}</button></div>
         ${c.hoursPending > 0 && c.rate ? `<div class="fin-sub"><span>Si hacés las ${fmtHours(c.hoursPending)} h pendientes</span><span>+ ${fmtMoney(c.extrasPending)}</span></div>` : ''}
     </div>`;
 
@@ -644,11 +653,12 @@ function renderMoney() {
         const ag = c.ag || aguinaldoInfo(nextAguinaldoKey(periodKey));
         if (!ag) return '';
         const here = !!c.ag;
-        const note = here && ag.manual ? `Ya cargaste un ingreso “Aguinaldo”: se usa ese y no se suma el automático (el calculado sería ${fmtMoney(ag.amount)}).`
+        const manualAmt = here && ag.manual ? sumBy(c.incomes.filter(x => /aguinaldo/i.test(x.name)), x => x.amount) : null;
+        const note = here && ag.manual ? `Se usa el que cargaste. La app estima ${fmtMoney(ag.amount)} (diferencia ${fmtMoney((manualAmt || 0) - ag.amount)}).`
             : `Suma de los 6 cobros de ${fmtMes(ag.keys[0])} a ${fmtMes(ag.keys[5])} (${fmtMoney(ag.sum)}) ÷ 12. Es una estimación con lo que tenés cargado.`;
         return `<div class="card">
             <div class="card-head"><h3>${here ? 'Aguinaldo' : 'Próximo aguinaldo'}</h3><span class="card-aside">${ag.dueText}</span></div>
-            <div class="fin-big">${fmtMoney(ag.amount)}</div>
+            <div class="fin-big">${fmtMoney(manualAmt != null ? manualAmt : ag.amount)}</div>
             <div class="fin-eq">${note}</div>
             <div class="fin-sub"><span>Fecha límite</span><span>${fmtDayMonth(ag.dueDate)} ${ag.dueDate.getFullYear()}</span></div>
             <div class="fin-sub"><span>${ag.daysLeft >= 0 ? 'Faltan' : 'Pasó hace'}</span><span>${Math.abs(ag.daysLeft)} ${Math.abs(ag.daysLeft) === 1 ? 'día' : 'días'}</span></div>
@@ -667,7 +677,7 @@ function renderMoney() {
     const inc = `<div class="card">
         <div class="card-head"><h3>Ingresos</h3><button class="mini-btn primary" data-act="item-add" data-kind="inc"><i class="fas fa-plus"></i> Agregar</button></div>
         ${c.agAmount ? `<div class="fin-item"><span class="fin-name">Aguinaldo <small>(automático)</small></span><span class="fin-amt">${fmtMoney(c.agAmount)}</span></div>` : ''}
-        ${c.incomes.length ? c.incomes.map(x => item(x, 'inc')).join('') : (c.agAmount ? '' : `<div class="fin-empty">Sin otros ingresos en este período.</div>`)}
+        ${c.incomes.length ? c.incomes.filter(x => x.amount > 0).map(x => item(x, 'inc')).join('') + (c.incomes.some(x => !(x.amount > 0)) ? `<div class="fin-actions">${c.incomes.filter(x => !(x.amount > 0)).map(x => `<button class="mini-btn" data-act="item-edit" data-kind="inc" data-id="${x.id}">${escapeHtml(x.name || 'Sin nombre')} · $0</button>`).join('')}</div>` : '') : (c.agAmount ? '' : `<div class="fin-empty">Sin otros ingresos en este período.</div>`)}
         ${c.incomes.length || c.agAmount ? `<div class="fin-total"><span>Total ingresos</span><span>${fmtMoney(c.incTotal)}</span></div>` : ''}
     </div>`;
 
@@ -720,6 +730,11 @@ async function deleteItem(kind, id) {
     else p.incomes = p.incomes.filter(x => x.id !== id);
     saveData(); renderAll(); showUndoToast('Eliminado');
 }
+function toggleReceived(id) {
+    const x = ensurePeriod(periodKey).incomes.find(y => y.id === id);
+    if (x) { x.received = !x.received; saveData(); renderAll(); }
+}
+function toggleSalary() { const p = ensurePeriod(periodKey); p.salaryReceived = !p.salaryReceived; saveData(); renderAll(); }
 function togglePaid(id) {
     const x = ensurePeriod(periodKey).expenses.find(y => y.id === id);
     if (x) { x.paid = !x.paid; saveData(); renderAll(); }
@@ -767,11 +782,11 @@ function syncAddDone() {
 function updateHoursPreview() {
     const s = $('addStart').value, e = $('addEnd').value, el = $('hoursPreview');
     if (!s || !e) { el.innerHTML = ''; return; }
-    if (s >= e) { el.innerHTML = '<span style="color:#EF4444;">El inicio debe ser anterior al final</span>'; return; }
-    const h = (timeToMin(e) - timeToMin(s)) / 60;
+    if (s === e) { el.innerHTML = '<span style="color:#EF4444;">El inicio y el final no pueden ser iguales</span>'; return; }
+    const h = entryHours({ start: s, end: e });
     const key = periodKeyOf($('addDate').value || todayStr());
     const rate = calc(key).rate;
-    el.innerHTML = `Son <b>${fmtHours(h)} h</b>${rate ? ` · <b>${fmtMoney(h * rate)}</b>` : ''} <span style="color:var(--text-light)">(período de ${monthName(parseKey(key).month).toLowerCase()})</span>`;
+    el.innerHTML = `Son <b>${fmtHours(h)} h</b>${rate ? ` · <b>${fmtMoney(h * rate)}</b>` : ''} <span style="color:var(--text-light)">(período de ${monthName(parseKey(key).month).toLowerCase()})</span>${e < s ? ' · <b>termina al día siguiente</b>' : ''}`;
 }
 function renderShiftChips() {
     const counts = new Map();
@@ -784,18 +799,27 @@ function renderShiftChips() {
 async function submitAdd() {
     const date = $('addDate').value, start = $('addStart').value, end = $('addEnd').value;
     if (!date || !start || !end) { showToast('Completá fecha y horario'); return; }
-    if (start >= end) { showToast('El inicio debe ser anterior al final'); return; }
+    if (start === end) { showToast('El inicio y el final no pueden ser iguales'); return; }
     if (overlapping(date, start, end)) {
         const ok = await showConfirm({ title: 'Se pisa con otra extra', message: 'Ya tenés una extra en ese horario. ¿Guardar igual?', okText: 'Guardar igual', warn: true });
         if (!ok) return;
     }
-    addEntry(date, start, end, $('addComment').value, addDone);
+    const rep = parseInt($('addRepeat').value, 10) || 0, dates = [date];
+    if (rep) { const last = periodRange(periodKeyOf(date)).endDate; let d = parseDate(date); for (;;) { d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + rep); if (d > last) break; dates.push(formatDate(d)); } }
+    if (dates.length > 1) {
+        const hh = entryHours({ start, end }), clash = dates.slice(1).filter(ds => overlapping(ds, start, end)).length;
+        const ok = await showConfirm({ title: `Se crean ${dates.length} extras`, message: `Del ${fmtDayMonth(parseDate(dates[0]))} al ${fmtDayMonth(parseDate(dates[dates.length - 1]))}: ${fmtHours(hh)} h cada una, ${fmtHours(hh * dates.length)} h en total (${fmtMoney(hh * dates.length * rateFor(date))}). Las repetidas quedan pendientes.${clash ? ` ${clash} se pisan con otras extras.` : ''}`, okText: 'Crear todas', warn: true });
+        if (!ok) return;
+    }
+    const cm = $('addComment').value.trim();
+    dates.forEach((ds, i) => data.entries.push({ id: nextId(data.entries), date: ds, start, end, done: i === 0 && !!addDone, comment: cm }));
+    saveData(); renderAll(); $('addRepeat').value = '0';
     $('addComment').value = '';
     addDoneManual = false;
     const d = parseDate(date);
     currentYear = d.getFullYear(); currentMonth = d.getMonth(); selectedDate = date;
     periodKey = periodKeyOf(date);
-    showToast(`Extra agregada · ${fmtHours((timeToMin(end) - timeToMin(start)) / 60)} h`);
+    showToast(dates.length > 1 ? `${dates.length} extras agregadas` : `Extra agregada · ${fmtHours(entryHours({ start, end }))} h`);
     switchTab('tabCalendar');
 }
 
@@ -1203,7 +1227,7 @@ window.addEventListener('appinstalled', () => { deferredInstall = null; dismissI
 //  PANTALLAS Y EVENTOS
 // ============================================================
 function updateBadge() {
-    const pend = calc(currentKey()).list.filter(e => !e.done).length;
+    const pend = calc(currentKey()).list.filter(e => !e.done && endedAt(e)).length; // solo las que ya terminaron y falta confirmar
     const b = $('summaryBadge');
     b.textContent = pend;
     b.style.display = pend > 0 ? 'flex' : 'none';
@@ -1285,6 +1309,8 @@ function init() {
         else if (act === 'item-edit') openItemModal(el.dataset.kind, id);
         else if (act === 'item-del') deleteItem(el.dataset.kind, id);
         else if (act === 'pay') togglePaid(id);
+        else if (act === 'recv') toggleReceived(id);
+        else if (act === 'salary-toggle') toggleSalary();
         else if (act === 'copy-prev') copyPrevExpenses();
     });
     $('itemCancelBtn').addEventListener('click', closeItemModal);
@@ -1326,7 +1352,8 @@ function init() {
     $('wipeBtn').addEventListener('click', wipeAll);
 
     // Deshacer + nube
-    $('toast').addEventListener('click', ev => { if (ev.target.closest('#toastUndo')) undoLast(); });
+    $('toast').addEventListener('click', ev => { if (ev.target.closest('#toastUndo')) undoLast(); else if (ev.target.closest('#toastReload')) location.reload(); });
+    if ('serviceWorker' in navigator) { const had = !!navigator.serviceWorker.controller; navigator.serviceWorker.addEventListener('controllerchange', () => { if (!had) return; const el = $('toast'); el.innerHTML = '<span>Hay una versión nueva</span><button type="button" class="toast-undo" id="toastReload">Actualizar</button>'; el.classList.add('show', 'has-action'); clearTimeout(toastTimeout); }); }
     $('cloudBtn').addEventListener('click', cloudButton);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) cloudCheck(); });
     window.addEventListener('online', cloudCheck);
