@@ -138,7 +138,7 @@ function fmtHours(h) { return String(Math.round(h * 100) / 100).replace('.', ','
 function fmtMoney(n) {
     n = Math.round(n * 100) / 100;
     let s;
-    try { s = Math.abs(n).toLocaleString('es-UY', { maximumFractionDigits: 2 }); } catch (_) { s = String(Math.abs(n)); }
+    try { s = Math.abs(n).toLocaleString('es-UY', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }); } catch (_) { s = String(Math.abs(n)); }
     return (n < 0 ? '−$ ' : '$ ') + s;
 }
 // "30.842" y "30842" valen lo mismo; "35,99" y "35.99" también
@@ -631,6 +631,7 @@ function savePeriodModal() {
 // ============================================================
 //  PLATA: gastos e ingresos del período
 // ============================================================
+let moneyMoreOpen = false;
 function renderMoney() {
     renderPeriodNav();
     const c = calc(periodKey);
@@ -648,16 +649,17 @@ function renderMoney() {
     let left = `<div class="card">
         <div class="card-head"><h3>Me quedan</h3><span class="card-aside">${c.left < 0 ? 'Te falta plata' : 'Después de pagar todo'}</span></div>
         <div class="fin-big ${c.left < 0 ? 'neg' : ''}">${fmtMoney(c.left)}</div>
-        <div class="fin-eq">Cobro ${fmtMoney(c.cobro)}${c.devol ? ` (incluye ${fmtMoney(c.devol)} de devoluciones)` : ''} + ingresos ${fmtMoney(c.incTotal)} − gastos ${fmtMoney(c.expTotal)}</div>
-        <div class="fin-total"><span>Plata del mes (cobro + ingresos)</span><span>${fmtMoney(c.cobro + c.incTotal)}</span></div>
-        <div class="fin-sub"><span>Consumo (pagado ÷ plata que entró)</span><span>${Math.round(pct * 100)}%</span></div><div style="height:8px;border-radius:4px;background:rgba(128,128,128,.22);overflow:hidden;margin:2px 0 10px;"><div style="height:100%;width:${Math.min(100, pct * 100)}%;background:${barCol};"></div></div>
-        <div class="fin-sub"><span>Ya pagué</span><span>${fmtMoney(c.expTotal - c.expPending)}</span></div>
-        <div class="fin-sub"><span>Todavía debo pagar</span><span>${fmtMoney(c.expPending)}</span></div>
-        <div class="fin-sub"><span>Tengo ahora (cobrado − pagado)</span><span>${fmtMoney(c.haveNow)}</span></div>
-        <div class="fin-actions"><button class="mini-btn ${c.salaryReceived ? 'primary' : ''}" data-act="salary-toggle"><i class="fas fa-check"></i> ${c.salaryReceived ? 'Sueldo cobrado' : 'Ya cobré el sueldo'}</button> <button class="mini-btn" data-act="period-settings"><i class="fas fa-pen"></i> Cobro real y devoluciones</button> <button class="mini-btn" data-act="load-receipts"><i class="fas fa-file-invoice-dollar"></i> Cargar recibos 2026</button></div>
-        ${c.hoursPending > 0 && c.rate ? `<div class="fin-sub"><span>Si hacés las ${fmtHours(c.hoursPending)} h pendientes</span><span>+ ${fmtMoney(c.extrasPending)}</span></div>` : ''}
+        <div class="fin-lines">
+            <div class="fin-line"><span>Sueldo${c.devol ? ' + devoluciones' : ''}</span><b>${fmtMoney(c.cobro)}</b></div>
+            <div class="fin-line"><span>Ingresos</span><b>+ ${fmtMoney(c.incTotal)}</b></div>
+            <div class="fin-line"><span>Gastos</span><b>− ${fmtMoney(c.expTotal)}</b></div>
+        </div>
+        <div class="fin-lines soft">
+            <div class="fin-line"><span>Falta pagar</span><b>${fmtMoney(c.expPending)}</b></div>
+            <div class="fin-line"><span>Tengo ahora</span><b>${fmtMoney(c.haveNow)}</b></div>
+        </div>
+        <div class="fin-actions"><button class="mini-btn ${c.salaryReceived ? 'primary' : ''}" data-act="salary-toggle"><i class="fas fa-check"></i> ${c.salaryReceived ? 'Sueldo cobrado' : 'Ya cobré el sueldo'}</button> <button class="mini-btn" data-act="period-settings"><i class="fas fa-pen"></i> Ajustar cobro</button></div>
     </div>`;
-    left += cuotasCard(c);
 
     const agCard = (() => {
         const fmtMes = k => monthName(parseKey(k).month).toLowerCase();
@@ -679,9 +681,8 @@ function renderMoney() {
 
     const exp = `<div class="card">
         <div class="card-head"><h3>Gastos</h3><button class="mini-btn primary" data-act="item-add" data-kind="exp"><i class="fas fa-plus"></i> Agregar</button></div>
-        ${c.expenses.length ? (c.expenses.some(x => x.due) ? [...c.expenses].sort((a, b) => (a.paid - b.paid) || ((a.due || 99) - (b.due || 99))) : c.expenses).map(x => item(x, 'exp')).join('') : `<div class="fin-empty">Todavía no cargaste gastos en este período.</div>`}
-        ${c.expenses.length ? `<div class="fin-total"><span>Total gastos</span><span>${fmtMoney(c.expTotal)}</span></div>
-            <div class="fin-sub"><span>Todavía debo pagar</span><span>${fmtMoney(c.expPending)}</span></div>` : ''}
+        ${c.expenses.length ? [...c.expenses].sort((a, b) => (a.paid - b.paid) || ((a.due || 99) - (b.due || 99))).map(x => item(x, 'exp')).join('') : `<div class="fin-empty">Todavía no cargaste gastos en este período.</div>`}
+        ${c.expenses.length ? `<div class="fin-total"><span>Total gastos</span><span>${fmtMoney(c.expTotal)}</span></div>` : ''}
         <div class="fin-actions"><button class="mini-btn" data-act="copy-prev"><i class="fas fa-copy"></i> Copiar gastos del período anterior</button></div>
     </div>`;
 
@@ -700,7 +701,11 @@ function renderMoney() {
             <button class="sd-btn sd-delete" data-act="item-del" data-kind="ppl" data-id="${x.id}" aria-label="Eliminar"><i class="fas fa-trash-alt"></i></button></div>`).join('') : `<div class="fin-empty">Nadie te debe ni le debés. Ej: Pilar · 16593</div>`}
         ${data.people.length ? `<div class="fin-total"><span>${pnet < 0 ? 'En total debés' : 'En total te deben'}</span><span>${fmtMoney(Math.abs(pnet))}</span></div>` : ''}
     </div>`;
-    box.innerHTML = left + agCard + exp + inc + ppl + `<div class="summary-footer"></div>`;
+    const more = `<details class="more-details" id="moreDetails" ${moneyMoreOpen ? 'open' : ''}><summary>Más detalle <small>cuotas, aguinaldo, cuentas con personas</small></summary>
+        ${cuotasCard(c)}${agCard}${ppl}
+        <div class="fin-actions"><button class="mini-btn" data-act="load-receipts"><i class="fas fa-file-invoice-dollar"></i> Cargar recibos 2026</button></div></details>`;
+    box.innerHTML = left + exp + inc + more + `<div class="summary-footer"></div>`;
+    const md = $('moreDetails'); if (md) md.addEventListener('toggle', () => { moneyMoreOpen = md.open; });
 }
 
 let editingItem = null; // { kind, id|null }
@@ -781,7 +786,7 @@ function cuotasCard(c) {
     const frees = Object.keys(free).map(Number).sort((a, b) => a - b).map(k => { acc += free[k]; const d = new Date(year, month + k + 1, 1); return `<div class="fin-sub"><span>Desde ${monthName(d.getMonth()).toLowerCase()} ${d.getFullYear()} liberás</span><span>+ ${fmtMoney(acc)} por mes</span></div>`; }).join('');
     return `<div class="card"><div class="card-head"><h3>Cuotas</h3><span class="card-aside">${rows.length} activas</span></div>
         ${rows.map(r => `<div class="fin-sub"><span>${escapeHtml(r.name)} ${r.cur}/${r.tot} · ${r.left ? 'faltan ' + r.left : 'es la última'}</span><span>${fmtMoney(r.left * r.amt)}</span></div>`).join('')}
-        <div class="fin-total"><span>Falta pagar en cuotas (después de este mes)</span><span>${fmtMoney(debt)}</span></div>${frees}</div>`;
+        <div class="fin-total"><span>Falta en cuotas después de este mes</span><span>${fmtMoney(debt)}</span></div>${frees}</div>`;
 }
 // Recibos de sueldo 2026: el líquido de cada mes va en el período del mes siguiente (cuando se cobra)
 const RECIBOS_2026 = { '2026-02': 35278.25, '2026-03': 49103.26, '2026-04': 38108.35, '2026-05': 41884.01, '2026-06': 25977.75, '2026-07': 33571.66, '2026-08': 31793.57, '2026-09': 31869.37, '2026-10': 28946.38, '2026-11': 33067.27 };
