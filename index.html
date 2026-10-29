@@ -331,6 +331,10 @@
                 <input type="text" inputmode="decimal" id="perDevol" placeholder="0" />
             </div>
         </div>
+        <div class="form-group">
+            <label for="perHaberes">Haberes del recibo ($, bruto) <span class="label-opt">(para el aguinaldo)</span></label>
+            <input type="text" inputmode="decimal" id="perHaberes" placeholder="Ej: 48591,13" />
+        </div>
         <div class="modal-actions">
             <button class="btn-secondary" id="periodCancelBtn">Cancelar</button>
             <button class="btn-submit" id="periodSaveBtn"><i class="fas fa-check"></i> Guardar</button>
@@ -359,6 +363,27 @@
         <div class="modal-actions">
             <button class="btn-secondary" id="itemCancelBtn">Cancelar</button>
             <button class="btn-submit" id="itemSaveBtn"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- COPIAR GASTOS -->
+<div id="copyModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card scrolly">
+        <h2><i class="fas fa-copy" style="color:var(--primary-ink);margin-right:8px;"></i>Copiar gastos</h2>
+        <p class="modal-hint">Las cuotas se ajustan solas según la distancia entre los dos períodos.</p>
+        <div class="form-group">
+            <label for="copyFrom">Copiar de</label>
+            <select id="copyFrom"></select>
+        </div>
+        <div class="form-group">
+            <label for="copyTo">Pegar en</label>
+            <select id="copyTo"></select>
+        </div>
+        <div id="copyPreview" class="copy-preview"></div>
+        <div class="modal-actions">
+            <button class="btn-secondary" id="copyCancelBtn">Cancelar</button>
+            <button class="btn-submit" id="copySaveBtn"><i class="fas fa-paste"></i> Copiar</button>
         </div>
     </div>
 </div>
