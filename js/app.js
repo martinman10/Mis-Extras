@@ -287,7 +287,6 @@ function periodTotal(key) {
     const p = getPeriod(key), s = data.settings, r = periodRange(key);
     const eff = f => (p[f] > 0 ? p[f] : s[f]);
     const hDone = sumBy(data.entries.filter(e => e.done && e.date >= r.start && e.date <= r.end), entryHours);
-    if (p.cobroReal > 0) return p.cobroReal; // se trabaja solo con el líquido que cobrás
     return eff('base') + hDone * eff('rate') + (p.night || 0) * eff('nightRate') + (p.weekend || 0) * eff('weekendRate');
 }
 function aguinaldoInfo(key) {
@@ -321,7 +320,8 @@ function calc(key) {
     const night = p.night || 0, weekend = p.weekend || 0;
     const nightPay = night * eff('nightRate'), weekendPay = weekend * eff('weekendRate');
     const total = base + extras + nightPay + weekendPay;
-    const devol = p.devol || 0, cobroReal = p.cobroReal > 0 ? p.cobroReal : 0, cobro = (cobroReal || total) + devol; // como COBRE + DEVOLUCIONES del Excel
+    const devol = p.devol || 0, cobroReal = 0, cobro = total + devol; // sueldo = base + extras (+ nocturnas/finde), sin descuentos, como el Excel
+   ; // como COBRE + DEVOLUCIONES del Excel
     const goal = p.goal != null ? p.goal : s.goal;
     const min = p.min != null ? p.min : s.min;
     const expenses = p.expenses || [], incomes = p.incomes || [];
@@ -703,7 +703,7 @@ function renderMoney() {
     </div>`;
     const more = `<details class="more-details" id="moreDetails" ${moneyMoreOpen ? 'open' : ''}><summary>Más detalle <small>cuotas, aguinaldo, cuentas con personas</small></summary>
         ${cuotasCard(c)}${agCard}${ppl}
-        <div class="fin-actions"><button class="mini-btn" data-act="load-receipts"><i class="fas fa-file-invoice-dollar"></i> Cargar recibos 2026</button></div></details>`;
+</details>`;
     box.innerHTML = left + exp + inc + more + `<div class="summary-footer"></div>`;
     const md = $('moreDetails'); if (md) md.addEventListener('toggle', () => { moneyMoreOpen = md.open; });
 }
