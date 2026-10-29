@@ -145,6 +145,8 @@ function fmtMoney(n) {
 function parseNum(str) {
     let s = String(str == null ? '' : str).trim().replace(/\s/g, '').replace(/^\$/, '');
     if (s === '') return null;
+    const t = s.replace(/[x×]/gi, '*');
+    if (/^-?\d+([.,]\d+)?([*+\/-]\d+([.,]\d+)?)+$/.test(t)) { try { const v = Function('return ' + t.replace(/,/g, '.'))(); return isFinite(v) ? Math.round(v * 100) / 100 : NaN; } catch (_) { return NaN; } }
     if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
     else if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
     else s = s.replace(',', '.');
@@ -204,11 +206,12 @@ function showConfirm({ title = '¿Estás seguro?', message = '', okText = 'Confi
 // ============================================================
 let data = loadData();
 
-function emptyData() { return { settings: { ...DEFAULT_SETTINGS }, entries: [], periods: {} }; }
+function emptyData() { return { settings: { ...DEFAULT_SETTINGS }, entries: [], periods: {}, people: [] }; }
 function normalizeData(raw) {
     const d = emptyData();
     if (!raw || typeof raw !== 'object') return d;
     d.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
+    d.people = Array.isArray(raw.people) ? raw.people.map((x, i) => ({ id: x.id || i + 1, name: String(x.name || ''), amount: Number(x.amount) || 0 })) : [];
     d.entries = Array.isArray(raw.entries) ? raw.entries.filter(e => e && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && /^\d{2}:\d{2}$/.test(e.start) && /^\d{2}:\d{2}$/.test(e.end)).map((e, i) => ({
         id: Number.isFinite(e.id) ? e.id : i + 1, date: e.date, start: e.start, end: e.end, done: !!e.done, comment: String(e.comment || '')
     })) : [];
@@ -284,6 +287,7 @@ function periodTotal(key) {
     const p = getPeriod(key), s = data.settings, r = periodRange(key);
     const eff = f => (p[f] > 0 ? p[f] : s[f]);
     const hDone = sumBy(data.entries.filter(e => e.done && e.date >= r.start && e.date <= r.end), entryHours);
+    if (p.cobroReal > 0) return p.cobroReal; // se trabaja solo con el líquido que cobrás
     return eff('base') + hDone * eff('rate') + (p.night || 0) * eff('nightRate') + (p.weekend || 0) * eff('weekendRate');
 }
 function aguinaldoInfo(key) {
@@ -317,6 +321,7 @@ function calc(key) {
     const night = p.night || 0, weekend = p.weekend || 0;
     const nightPay = night * eff('nightRate'), weekendPay = weekend * eff('weekendRate');
     const total = base + extras + nightPay + weekendPay;
+    const devol = p.devol || 0, cobroReal = p.cobroReal > 0 ? p.cobroReal : 0, cobro = (cobroReal || total) + devol; // como COBRE + DEVOLUCIONES del Excel
     const goal = p.goal != null ? p.goal : s.goal;
     const min = p.min != null ? p.min : s.min;
     const expenses = p.expenses || [], incomes = p.incomes || [];
@@ -325,11 +330,11 @@ function calc(key) {
     const advance = sumBy(expenses.filter(x => /adelanto/i.test(x.name)), x => x.amount);
     return {
         key, range: r, list, hoursAll, hoursDone, hoursPending: hoursAll - hoursDone,
-        rate, base, extras, extrasPending, night, weekend, nightPay, weekendPay, total,
+        rate, base, extras, extrasPending, night, weekend, nightPay, weekendPay, total, cobro, cobroReal, devol,
         goal, min, remaining: Math.max(0, goal - hoursAll), remainingMin: Math.max(0, min - hoursAll),
         expenses, incomes, expTotal, incTotal, ag, agAmount, advance, net: total - advance,
-        left: total + incTotal - expTotal, salaryReceived: !!p.salaryReceived,
-        haveNow: (p.salaryReceived ? total : 0) + sumBy(incomes.filter(x => x.received), x => x.amount) - sumBy(expenses.filter(x => x.paid), x => x.amount),
+        left: cobro + incTotal - expTotal, salaryReceived: !!p.salaryReceived,
+        haveNow: (p.salaryReceived ? cobro : 0) + sumBy(incomes.filter(x => x.received), x => x.amount) - sumBy(expenses.filter(x => x.paid), x => x.amount),
         expPending: sumBy(expenses.filter(x => !x.paid), x => x.amount)
     };
 }
@@ -607,17 +612,19 @@ function openPeriodModal() {
     $('periodModalTitle').textContent = `Ajustar ${monthName(month).toLowerCase()} ${year}`;
     $('perGoal').value = numToInput(c.goal); $('perMin').value = numToInput(c.min);
     $('perNight').value = numToInput(c.night); $('perWeekend').value = numToInput(c.weekend);
+    $('perCobro').value = numToInput(c.cobroReal); $('perDevol').value = numToInput(c.devol);
     $('periodModal').style.display = 'flex';
 }
 function closePeriodModal() { $('periodModal').style.display = 'none'; }
 function savePeriodModal() {
     const goal = parseNum($('perGoal').value), min = parseNum($('perMin').value);
     const night = parseNum($('perNight').value), weekend = parseNum($('perWeekend').value);
-    if ([goal, min, night, weekend].some(v => Number.isNaN(v) || (v != null && v < 0))) { showToast('Revisá los números'); return; }
+    const cobroReal = parseNum($('perCobro').value), devol = parseNum($('perDevol').value);
+    if ([goal, min, night, weekend, cobroReal, devol].some(v => Number.isNaN(v) || (v != null && v < 0))) { showToast('Revisá los números'); return; }
     const p = ensurePeriod(periodKey);
     p.goal = goal == null ? data.settings.goal : goal;
     p.min = min == null ? data.settings.min : min;
-    p.night = night || 0; p.weekend = weekend || 0;
+    p.night = night || 0; p.weekend = weekend || 0; p.cobroReal = cobroReal || 0; p.devol = devol || 0; delete p.haberes;
     saveData(); closePeriodModal(); renderAll(); showToast('Mes actualizado');
 }
 
@@ -636,15 +643,18 @@ function renderMoney() {
         <button class="sd-btn sd-delete" data-act="item-del" data-kind="${kind}" data-id="${x.id}" aria-label="Eliminar"><i class="fas fa-trash-alt"></i></button>
     </div>`;
 
+    const money = c.cobro + sumBy(c.incomes.filter(x => x.received), x => x.amount), paidAmt = c.expTotal - c.expPending;
+    const pct = money > 0 ? paidAmt / money : 0, barCol = paidAmt === 0 ? '#9aa3af' : pct > 0.6 ? '#e06666' : pct >= 0.4 ? '#2b5c8f' : '#b6d7a8'; // mismos colores que CONSUMO del Excel
     let left = `<div class="card">
         <div class="card-head"><h3>Me quedan</h3><span class="card-aside">${c.left < 0 ? 'Te falta plata' : 'Después de pagar todo'}</span></div>
         <div class="fin-big ${c.left < 0 ? 'neg' : ''}">${fmtMoney(c.left)}</div>
-        <div class="fin-eq">Cobro ${fmtMoney(c.total)} + ingresos ${fmtMoney(c.incTotal)} − gastos ${fmtMoney(c.expTotal)}</div>
-        <div class="fin-total"><span>Plata del mes (cobro + ingresos)</span><span>${fmtMoney(c.total + c.incTotal)}</span></div>
+        <div class="fin-eq">Cobro ${fmtMoney(c.cobro)}${c.devol ? ` (incluye ${fmtMoney(c.devol)} de devoluciones)` : ''} + ingresos ${fmtMoney(c.incTotal)} − gastos ${fmtMoney(c.expTotal)}</div>
+        <div class="fin-total"><span>Plata del mes (cobro + ingresos)</span><span>${fmtMoney(c.cobro + c.incTotal)}</span></div>
+        <div class="fin-sub"><span>Consumo (pagado ÷ plata que entró)</span><span>${Math.round(pct * 100)}%</span></div><div style="height:8px;border-radius:4px;background:rgba(128,128,128,.22);overflow:hidden;margin:2px 0 10px;"><div style="height:100%;width:${Math.min(100, pct * 100)}%;background:${barCol};"></div></div>
         <div class="fin-sub"><span>Ya pagué</span><span>${fmtMoney(c.expTotal - c.expPending)}</span></div>
         <div class="fin-sub"><span>Todavía debo pagar</span><span>${fmtMoney(c.expPending)}</span></div>
         <div class="fin-sub"><span>Tengo ahora (cobrado − pagado)</span><span>${fmtMoney(c.haveNow)}</span></div>
-        <div class="fin-actions"><button class="mini-btn ${c.salaryReceived ? 'primary' : ''}" data-act="salary-toggle"><i class="fas fa-check"></i> ${c.salaryReceived ? 'Sueldo cobrado' : 'Ya cobré el sueldo'}</button></div>
+        <div class="fin-actions"><button class="mini-btn ${c.salaryReceived ? 'primary' : ''}" data-act="salary-toggle"><i class="fas fa-check"></i> ${c.salaryReceived ? 'Sueldo cobrado' : 'Ya cobré el sueldo'}</button> <button class="mini-btn" data-act="period-settings"><i class="fas fa-pen"></i> Cobro real y devoluciones</button> <button class="mini-btn" data-act="load-receipts"><i class="fas fa-file-invoice-dollar"></i> Cargar recibos 2026</button></div>
         ${c.hoursPending > 0 && c.rate ? `<div class="fin-sub"><span>Si hacés las ${fmtHours(c.hoursPending)} h pendientes</span><span>+ ${fmtMoney(c.extrasPending)}</span></div>` : ''}
     </div>`;
     left += cuotasCard(c);
@@ -682,16 +692,25 @@ function renderMoney() {
         ${c.incomes.length || c.agAmount ? `<div class="fin-total"><span>Total ingresos</span><span>${fmtMoney(c.incTotal)}</span></div>` : ''}
     </div>`;
 
-    box.innerHTML = left + agCard + exp + inc + `<div class="summary-footer"></div>`;
+    const pnet = sumBy(data.people, x => x.amount);
+    const ppl = `<div class="card">
+        <div class="card-head"><h3>Cuentas con personas</h3><button class="mini-btn primary" data-act="item-add" data-kind="ppl"><i class="fas fa-plus"></i> Agregar</button></div>
+        ${data.people.length ? data.people.map(x => `<div class="fin-item"><span class="fin-name">${escapeHtml(x.name || 'Sin nombre')} <small>${x.amount < 0 ? 'se lo debo' : 'me debe'}</small></span><span class="fin-amt">${fmtMoney(Math.abs(x.amount))}</span>
+            <button class="sd-btn sd-edit" data-act="item-edit" data-kind="ppl" data-id="${x.id}" aria-label="Editar"><i class="fas fa-pen"></i></button>
+            <button class="sd-btn sd-delete" data-act="item-del" data-kind="ppl" data-id="${x.id}" aria-label="Eliminar"><i class="fas fa-trash-alt"></i></button></div>`).join('') : `<div class="fin-empty">Nadie te debe ni le debés. Ej: Pilar · 16593</div>`}
+        ${data.people.length ? `<div class="fin-total"><span>${pnet < 0 ? 'En total debés' : 'En total te deben'}</span><span>${fmtMoney(Math.abs(pnet))}</span></div>` : ''}
+    </div>`;
+    box.innerHTML = left + agCard + exp + inc + ppl + `<div class="summary-footer"></div>`;
 }
 
 let editingItem = null; // { kind, id|null }
 function openItemModal(kind, id) {
     const p = getPeriod(periodKey);
-    const list = kind === 'exp' ? p.expenses : p.incomes;
+    const list = kind === 'ppl' ? data.people : kind === 'exp' ? p.expenses : p.incomes;
     const it = id != null ? (list || []).find(x => x.id === id) : null;
     editingItem = { kind, id: it ? it.id : null };
-    $('itemModalTitle').textContent = (it ? 'Editar ' : 'Agregar ') + (kind === 'exp' ? 'gasto' : 'ingreso');
+    $('itemModalTitle').textContent = (it ? 'Editar ' : 'Agregar ') + (kind === 'exp' ? 'gasto' : kind === 'ppl' ? 'cuenta con una persona' : 'ingreso');
+    $('itemAmount').placeholder = kind === 'ppl' ? 'Positivo: me debe · Negativo: le debo' : '0';
     $('itemName').value = it ? it.name : '';
     $('itemAmount').value = it ? numToInput(it.amount) : '';
     $('itemDue').value = it && it.due ? it.due : ''; $('itemDueGroup').style.display = kind === 'exp' ? '' : 'none';
@@ -710,9 +729,9 @@ async function saveItemModal() {
     const amount = parseNum($('itemAmount').value);
     const err = $('itemError');
     if (!name) { err.textContent = 'Poné de qué se trata.'; err.style.display = 'block'; return; }
-    if (amount == null || Number.isNaN(amount) || amount < 0) { err.textContent = 'Escribí un valor válido (por ejemplo 1500).'; err.style.display = 'block'; return; }
+    if (amount == null || Number.isNaN(amount) || (amount < 0 && editingItem.kind !== 'ppl')) { err.textContent = 'Escribí un valor válido (por ejemplo 1500).'; err.style.display = 'block'; return; }
     const p = ensurePeriod(periodKey);
-    const list = editingItem.kind === 'exp' ? p.expenses : p.incomes;
+    const list = editingItem.kind === 'ppl' ? data.people : editingItem.kind === 'exp' ? p.expenses : p.incomes;
     const due = Math.min(31, Math.max(0, parseInt($('itemDue').value, 10) || 0));
     if (editingItem.id != null) {
         const it = list.find(x => x.id === editingItem.id);
@@ -727,11 +746,12 @@ async function saveItemModal() {
     if (isAdv) await chainAdvance(amount);
 }
 async function deleteItem(kind, id) {
-    const ok = await showConfirm({ title: kind === 'exp' ? '¿Eliminar este gasto?' : '¿Eliminar este ingreso?', message: 'Después podés deshacerlo.', okText: 'Eliminar', danger: true });
+    const ok = await showConfirm({ title: kind === 'exp' ? '¿Eliminar este gasto?' : kind === 'ppl' ? '¿Eliminar esta cuenta?' : '¿Eliminar este ingreso?', message: 'Después podés deshacerlo.', okText: 'Eliminar', danger: true });
     if (!ok) return;
     snapshot();
     const p = ensurePeriod(periodKey);
-    if (kind === 'exp') p.expenses = p.expenses.filter(x => x.id !== id);
+    if (kind === 'ppl') data.people = data.people.filter(x => x.id !== id);
+    else if (kind === 'exp') p.expenses = p.expenses.filter(x => x.id !== id);
     else p.incomes = p.incomes.filter(x => x.id !== id);
     saveData(); renderAll(); showUndoToast('Eliminado');
 }
@@ -762,6 +782,29 @@ function cuotasCard(c) {
     return `<div class="card"><div class="card-head"><h3>Cuotas</h3><span class="card-aside">${rows.length} activas</span></div>
         ${rows.map(r => `<div class="fin-sub"><span>${escapeHtml(r.name)} ${r.cur}/${r.tot} · ${r.left ? 'faltan ' + r.left : 'es la última'}</span><span>${fmtMoney(r.left * r.amt)}</span></div>`).join('')}
         <div class="fin-total"><span>Falta pagar en cuotas (después de este mes)</span><span>${fmtMoney(debt)}</span></div>${frees}</div>`;
+}
+// Recibos de sueldo 2026: el líquido de cada mes va en el período del mes siguiente (cuando se cobra)
+const RECIBOS_2026 = { '2026-02': 35278.25, '2026-03': 49103.26, '2026-04': 38108.35, '2026-05': 41884.01, '2026-06': 25977.75, '2026-07': 33571.66, '2026-08': 31793.57, '2026-09': 31869.37, '2026-10': 28946.38, '2026-11': 33067.27 };
+const RECIBOS_EXTRA = [{ key: '2026-06', name: 'Aguinaldo', amount: 22099.18 }, { key: '2026-09', name: 'Licencia', amount: 12199.55 }];
+function applyReceipts() {
+    let n = 0;
+    for (const [k, v] of Object.entries(RECIBOS_2026)) {
+        const p = ensurePeriod(k);
+        if (!(p.cobroReal > 0)) { p.cobroReal = v; n++; }
+        if (k <= '2026-10' && p.salaryReceived === undefined) p.salaryReceived = true;
+    }
+    for (const x of RECIBOS_EXTRA) {
+        const p = ensurePeriod(x.key);
+        if (!p.incomes.some(i => i.name === x.name)) p.incomes.push({ id: nextId(p.incomes), name: x.name, amount: x.amount, received: true });
+    }
+    return n;
+}
+async function loadReceipts() {
+    const ok = await showConfirm({ title: '¿Cargar los recibos de 2026?', message: 'Pone el líquido de cada recibo como cobro real (febrero a noviembre) y suma el aguinaldo y la licencia como ingresos. No pisa lo que ya cargaste.', okText: 'Cargar' });
+    if (!ok) return;
+    snapshot();
+    const n = applyReceipts();
+    saveData(); renderAll(); showUndoToast(`Recibos cargados: ${n}`);
 }
 async function chainAdvance(amount) {
     const nk = shiftKey(periodKey, 1);
@@ -896,6 +939,66 @@ function exportCsv() {
     rows.push(['Me quedan', '', '', '', num(c.left)]);
     const csv = '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
     downloadFile(`extras-${year}-${String(month + 1).padStart(2, '0')}.csv`, csv, 'text/csv;charset=utf-8');
+}
+// ============================================================
+//  EXPORTAR (Excel y PDF): mismo formato que la planilla — encabezado y primera columna celestes, celdas grises, bordes negros
+// ============================================================
+const EXP_BLUE = 'A7C4E4', EXP_GRAY = 'F3F3F3';
+function expDM(d) { return `${+d.slice(8)}/${+d.slice(5, 7)}`; }
+function r2(n) { return Math.round(n * 100) / 100; }
+function exportBlocks(c) {
+    const b = [];
+    b.push({ head: ['DIA', 'DESDE', 'HASTA', 'CANTIDAD'], kinds: ['t', 't', 't', 'h'],
+        rows: c.list.map(e => [expDM(e.date), e.start, e.end, r2(entryHours(e))]),
+        foot: [['TOTAL', '', '', r2(c.hoursAll)], ['HECHAS', '', '', r2(c.hoursDone)], ['POR HACER', '', '', r2(c.hoursPending)]] });
+    const cobro = [['Sueldo base', r2(c.base)], [`Extras hechas (${fmtHours(c.hoursDone)} h)`, r2(c.extras)]];
+    if (c.night) cobro.push([`Nocturnas (${fmtHours(c.night)} h)`, r2(c.nightPay)]);
+    if (c.weekend) cobro.push([`Fin de semana (${fmtHours(c.weekend)} h)`, r2(c.weekendPay)]);
+    const cf = [['TOTAL DEL MES', r2(c.total)]];
+    if (c.advance > 0) cf.push(['TOTAL − ADELANTO', r2(c.net)]);
+    if (c.cobroReal) cf.push(['COBRO REAL', r2(c.cobroReal + c.devol)]);
+    b.push({ head: ['A COBRAR', 'VALOR EN $'], kinds: ['t', 'm'], rows: cobro, foot: cf });
+    if (c.expenses.length) b.push({ head: ['GASTOS', 'VALOR EN $', '¿ESTÁ PAGO?'], kinds: ['t', 'm', 't'],
+        rows: c.expenses.map(x => [x.name || 'Sin nombre', r2(x.amount), x.paid ? 'SÍ' : 'NO']),
+        foot: [['TOTAL', r2(c.expTotal), ''], ['DEBO PAGAR', r2(c.expPending), '']] });
+    const inc = c.incomes.map(x => [x.name || 'Sin nombre', r2(x.amount), x.received ? 'SÍ' : 'NO']);
+    if (c.agAmount) inc.push(['Aguinaldo (automático)', r2(c.agAmount), 'NO']);
+    if (inc.length) b.push({ head: ['INGRESOS', 'VALOR EN $', '¿ESTÁ?'], kinds: ['t', 'm', 't'], rows: inc, foot: [['TOTAL', r2(c.incTotal), '']] });
+    b.push({ head: ['ME QUEDAN', 'VALOR EN $'], kinds: ['t', 'm'], rows: [], foot: [['ME QUEDAN', r2(c.left)]], onlyFoot: true });
+    return b;
+}
+let exljsPromise = null;
+function loadExcelJs() {
+    if (window.ExcelJS) return Promise.resolve(true);
+    if (!exljsPromise) exljsPromise = loadScript('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js').then(ok => { if (!ok) exljsPromise = null; return ok; });
+    return exljsPromise;
+}
+async function exportXlsx() {
+    const c = calc(periodKey), { year, month } = parseKey(periodKey), r = c.range;
+    if (!(await loadExcelJs())) { showToast('Sin conexión: se baja en formato simple (CSV)'); exportCsv(); return; }
+    const wb = new window.ExcelJS.Workbook();
+    const ws = wb.addWorksheet(`${monthName(month)} ${year}`.slice(0, 31), { views: [{ showGridLines: false }] });
+    ws.columns = [{ width: 30 }, { width: 15 }, { width: 15 }, { width: 15 }];
+    const thin = { style: 'thin', color: { argb: 'FF000000' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
+    const fill = rgb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + rgb } });
+    const t = ws.addRow([`A COBRAR EN ${monthName(month).toUpperCase()} ${year}`]); t.font = { bold: true, size: 14 };
+    const sub = ws.addRow([`Extras del ${fmtDayMonth(r.startDate)} al ${fmtDayMonth(r.endDate)}${data.settings.name ? ' · ' + data.settings.name : ''}`]); sub.font = { color: { argb: 'FF666666' }, size: 10 };
+    ws.addRow([]);
+    const style = (cell, blue, kind) => {
+        cell.fill = fill(blue ? EXP_BLUE : EXP_GRAY); cell.border = border; cell.font = { bold: true, size: 12 };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        if (kind === 'm' && typeof cell.value === 'number') cell.numFmt = '"$" #,##0.00';
+        else if (kind === 'h' && typeof cell.value === 'number') cell.numFmt = '0.##';
+    };
+    exportBlocks(c).forEach(bl => {
+        if (!bl.onlyFoot) { const hr = ws.addRow(bl.head); hr.height = 22; hr.eachCell(cell => style(cell, true, 't')); }
+        bl.rows.forEach(row => { const rr = ws.addRow(row); rr.height = 20; rr.eachCell({ includeEmpty: true }, (cell, i) => { if (i <= bl.head.length) style(cell, i === 1, bl.kinds[i - 1]); }); });
+        bl.foot.forEach(row => { const rr = ws.addRow(row); rr.height = 20; rr.eachCell({ includeEmpty: true }, (cell, i) => { if (i <= bl.head.length) style(cell, i === 1, bl.kinds[i - 1]); }); });
+        ws.addRow([]);
+    });
+    const buf = await wb.xlsx.writeBuffer();
+    await downloadFile(`extras-${year}-${String(month + 1).padStart(2, '0')}.xlsx`, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    showToast('Excel listo');
 }
 function backupNow() {
     const payload = { app: 'horax-mis-extras', version: 1, exportedAt: new Date().toISOString(), data };
@@ -1063,32 +1166,16 @@ async function loadHtml2pdf() {
     return h2pPromise;
 }
 function pdfHtml(c) {
-    const { year, month } = parseKey(c.key), r = c.range, color = data.settings.theme || THEME_DEFAULT;
-    const td = 'padding:6px 4px;border-bottom:1px solid #e5e7eb;font-size:12px;', R = 'text-align:right;white-space:nowrap;';
-    const th = 'padding:6px 4px;border-bottom:2px solid #cbd5e1;font-size:11px;color:#64748b;text-align:left;';
-    const row = (a, b, bold) => `<tr><td style="${td}${bold ? 'font-weight:700;' : ''}">${a}</td><td style="${td}${R}${bold ? 'font-weight:700;' : ''}">${b}</td></tr>`;
-    const sec = (title, body) => `<div style="page-break-inside:avoid;margin-top:18px;"><h3 style="margin:0 0 6px;font-size:14px;color:${color};">${title}</h3>${body}</div>`;
-    const tbl = rows => `<table style="width:100%;border-collapse:collapse;">${rows}</table>`;
-    let cobro = row('Sueldo base', fmtMoney(c.base)) + row(`Extras hechas (${fmtHours(c.hoursDone)} h)`, fmtMoney(c.extras));
-    if (c.night) cobro += row(`Nocturnas (${fmtHours(c.night)} h)`, fmtMoney(c.nightPay));
-    if (c.weekend) cobro += row(`Fin de semana (${fmtHours(c.weekend)} h)`, fmtMoney(c.weekendPay));
-    cobro += row('Total del mes', fmtMoney(c.total), true);
-    if (c.advance > 0) cobro += row(`Total − adelanto (${fmtMoney(c.advance)})`, fmtMoney(c.net), true);
-    const extras = c.list.length
-        ? `<table style="width:100%;border-collapse:collapse;"><tr><th style="${th}">Día</th><th style="${th}">Horario</th><th style="${th}${R}">Horas</th><th style="${th}${R}">Valor</th><th style="${th}">Estado</th></tr>`
-          + c.list.map(e => `<tr><td style="${td}">${weekdayShort(e.date)} ${e.date.slice(8)}/${e.date.slice(5, 7)}</td><td style="${td}">${e.start} – ${e.end}</td><td style="${td}${R}">${fmtHours(entryHours(e))}</td><td style="${td}${R}">${c.rate ? fmtMoney(entryHours(e) * c.rate) : '—'}</td><td style="${td}">${e.done ? 'Hecha' : 'Por hacer'}</td></tr>`).join('') + '</table>'
-        : '<p style="font-size:12px;color:#64748b;">Sin extras en este período.</p>';
-    const gastos = c.expenses.length ? tbl(c.expenses.map(x => row(escapeHtml(x.name || 'Sin nombre') + (x.paid ? ' <small style="color:#16a34a;">· pagado</small>' : ''), fmtMoney(x.amount))).join('') + row('Total gastos', fmtMoney(c.expTotal), true) + row('Todavía debo pagar', fmtMoney(c.expPending))) : '';
-    let ing = c.incomes.map(x => row(escapeHtml(x.name || 'Sin nombre'), fmtMoney(x.amount))).join('');
-    if (c.agAmount) ing += row('Aguinaldo (automático)', fmtMoney(c.agAmount));
-    const prog = `<p style="font-size:12px;margin:8px 0 0;">Horas: <b>${fmtHours(c.hoursAll)}</b> de ${fmtHours(c.goal)} (mínimo ${fmtHours(c.min)}). Hechas ${fmtHours(c.hoursDone)}, por hacer ${fmtHours(c.hoursPending)}.</p>`;
-    return `<div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;background:#fff;padding:6px;">
-        <div style="border-bottom:3px solid ${color};padding-bottom:10px;"><div style="font-size:22px;font-weight:700;color:${color};">Mis extras · ${monthName(month)} ${year}</div>
-        <div style="font-size:12px;color:#64748b;margin-top:3px;">Extras del ${fmtDayMonth(r.startDate)} al ${fmtDayMonth(r.endDate)}${data.settings.name ? ' · ' + escapeHtml(data.settings.name) : ''}</div></div>
-        <div style="margin-top:14px;padding:14px;border-radius:10px;background:${color};color:#fff;"><div style="font-size:12px;opacity:.85;">Total del mes</div><div style="font-size:28px;font-weight:700;">${fmtMoney(c.total)}</div></div>
-        ${sec('Lo que cobro', tbl(cobro) + prog)}${sec(`Extras (${c.list.length})`, extras)}${gastos ? sec('Gastos', gastos) : ''}${ing ? sec('Ingresos', tbl(ing + row('Total ingresos', fmtMoney(c.incTotal), true))) : ''}
-        ${sec('Me quedan', tbl(row('Cobro + ingresos − gastos', `<span style="font-size:16px;color:${c.left < 0 ? '#dc2626' : '#16a34a'};">${fmtMoney(c.left)}</span>`, true)))}
-        <p style="margin-top:22px;font-size:10px;color:#94a3b8;">Generado el ${new Date().toLocaleDateString('es-UY')} con Mis extras.</p></div>`;
+    const { year, month } = parseKey(c.key), r = c.range;
+    const cell = (v, kind, blue) => `<td style="border:1px solid #000;padding:7px 6px;text-align:center;font-weight:700;font-size:13px;background:#${blue ? EXP_BLUE : EXP_GRAY};">${typeof v === 'number' ? (kind === 'm' ? fmtMoney(v) : fmtHours(v)) : escapeHtml(String(v))}</td>`;
+    const head = h => `<tr>${h.map(x => `<th style="border:1px solid #000;padding:8px 6px;text-align:center;font-weight:800;font-size:14px;background:#${EXP_BLUE};">${escapeHtml(x)}</th>`).join('')}</tr>`;
+    const body = (rows, bl) => rows.map(row => `<tr style="page-break-inside:avoid;">${row.slice(0, bl.head.length).map((v, i) => cell(v, bl.kinds[i], i === 0)).join('')}</tr>`).join('');
+    const tables = exportBlocks(c).map(bl => `<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-top:18px;page-break-inside:auto;">${bl.onlyFoot ? '' : head(bl.head)}${body(bl.rows, bl)}${body(bl.foot, bl)}</table>`).join('');
+    return `<div style="font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;padding:6px;">
+        <div style="font-size:20px;font-weight:800;">A COBRAR EN ${monthName(month).toUpperCase()} ${year}</div>
+        <div style="font-size:12px;color:#666;margin-top:3px;">Extras del ${fmtDayMonth(r.startDate)} al ${fmtDayMonth(r.endDate)}${data.settings.name ? ' · ' + escapeHtml(data.settings.name) : ''}</div>
+        ${tables}
+        <p style="margin-top:20px;font-size:10px;color:#999;">Generado el ${new Date().toLocaleDateString('es-UY')} con Mis extras.</p></div>`;
 }
 async function exportPdf() {
     const c = calc(periodKey), { year, month } = parseKey(periodKey);
@@ -1321,7 +1408,7 @@ function init() {
         const act = el.dataset.act;
         if (act === 'mark-all') markAllDone();
         else if (act === 'period-settings') openPeriodModal();
-        else if (act === 'export-csv') exportCsv();
+        else if (act === 'export-csv') exportXlsx();
         else if (act === 'export-pdf') exportPdf();
         else handleEntryAction(act, parseInt(el.dataset.id, 10));
     });
@@ -1341,6 +1428,8 @@ function init() {
         else if (act === 'recv') toggleReceived(id);
         else if (act === 'salary-toggle') toggleSalary();
         else if (act === 'copy-prev') copyPrevExpenses();
+        else if (act === 'period-settings') openPeriodModal();
+        else if (act === 'load-receipts') loadReceipts();
     });
     $('itemCancelBtn').addEventListener('click', closeItemModal);
     $('itemSaveBtn').addEventListener('click', saveItemModal);
@@ -1408,6 +1497,7 @@ function init() {
 
     // Atajos del manifest (#add, #calendar, #summary, #money)
     const hashTab = { '#add': 'tabAdd', '#calendar': 'tabCalendar', '#summary': 'tabSummary', '#money': 'tabMoney' }[location.hash];
+    try { if (!localStorage.getItem('hxyo_receipts_v1')) { const n = applyReceipts(); localStorage.setItem('hxyo_receipts_v1', '1'); if (n) { saveData(); setTimeout(() => showToast(`Recibos 2026 cargados (${n})`), 700); } } } catch (_) {}
     renderAll();
     if (hashTab) switchTab(hashTab);
     maybeShowInstallBanner();
