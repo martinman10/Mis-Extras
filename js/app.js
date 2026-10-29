@@ -683,7 +683,7 @@ function renderMoney() {
         <div class="card-head"><h3>Gastos</h3><button class="mini-btn primary" data-act="item-add" data-kind="exp"><i class="fas fa-plus"></i> Agregar</button></div>
         ${c.expenses.length ? [...c.expenses].sort((a, b) => (a.paid - b.paid) || ((a.due || 99) - (b.due || 99))).map(x => item(x, 'exp')).join('') : `<div class="fin-empty">Todavía no cargaste gastos en este período.</div>`}
         ${c.expenses.length ? `<div class="fin-total"><span>Total gastos</span><span>${fmtMoney(c.expTotal)}</span></div>` : ''}
-        <div class="fin-actions"><button class="mini-btn" data-act="copy-prev"><i class="fas fa-copy"></i> Copiar gastos del período anterior</button></div>
+        <div class="fin-actions"><button class="mini-btn" data-act="copy-prev"><i class="fas fa-copy"></i> Copiar gastos de otro período</button></div>
     </div>`;
 
     const inc = `<div class="card">
@@ -818,32 +818,83 @@ async function chainAdvance(amount) {
     const np = ensurePeriod(nk); np.expenses.push({ id: nextId(np.expenses), name: 'ADELANTO', amount, paid: false, due: 0 });
     saveData(); renderAll(); showToast('Descuento agregado al próximo período');
 }
-function nextInstallment(name) {
-    const m = name.match(/^(.*?)(\d+)\s+de\s+(\d+)\s*$/i);
-    if (!m) return name;
-    const cur = parseInt(m[2], 10), tot = parseInt(m[3], 10);
-    if (cur >= tot) return null;
-    return `${m[1]}${cur + 1} de ${tot}`;
+// ---- Copiar gastos de un período a otro ----
+// Las cuotas viajan con el calendario: "CELU 15 de 18" en diciembre era la 9 de 18 en junio.
+// Se recalcula según la distancia en meses entre el período de origen y el de destino.
+function keyIdx(k) { const { year, month } = parseKey(k); return year * 12 + month; }
+function periodLabel(k) { const { year, month } = parseKey(k); return `${monthName(month)} ${year}`; }
+function planCopy(from, to) {
+    const delta = keyIdx(to) - keyIdx(from);
+    const target = (getPeriod(to).expenses || []).map(e => (e.name || '').trim().toLowerCase());
+    return (getPeriod(from).expenses || []).map(x => {
+        const it = { x, name: x.name, ok: true, note: '', dup: false };
+        if (/adelanto/i.test(x.name)) return { ...it, ok: false, note: 'Es un adelanto: no se copia' };
+        const m = (x.name || '').match(/^(.*?)(\d+)\s+de\s+(\d+)\s*$/i);
+        if (m) {
+            const cur = +m[2], tot = +m[3], n = cur + delta;
+            if (n < 1) return { ...it, ok: false, note: `Todavía no existía: la cuota 1 arranca en ${periodLabel(shiftKey(from, 1 - cur))}` };
+            if (n > tot) return { ...it, ok: false, note: `Ya terminó: la última cuota fue en ${periodLabel(shiftKey(from, tot - cur))}` };
+            it.name = `${m[1]}${n} de ${tot}`;
+            it.note = `Cuota ${n} de ${tot} · ${n === tot ? 'es la última' : 'faltan ' + (tot - n)}`;
+        }
+        if (target.includes(it.name.trim().toLowerCase())) { it.dup = true; it.note = (it.note ? it.note + ' · ' : '') + 'Ya está en el período de destino'; }
+        return it;
+    });
 }
-async function copyPrevExpenses() {
-    const prev = getPeriod(shiftKey(periodKey, -1));
-    if (!prev.expenses || !prev.expenses.length) { showToast('El período anterior no tiene gastos'); return; }
-    const p = ensurePeriod(periodKey);
-    if (p.expenses.length) {
-        const ok = await showConfirm({ title: '¿Copiar igual?', message: 'Este período ya tiene gastos. Se agregan los del período anterior a los que ya hay.', okText: 'Copiar', warn: true });
-        if (!ok) return;
+let copyState = null;
+function copyPeriodKeys() {
+    const set = new Set(Object.keys(data.periods));
+    for (let i = -36; i <= 24; i++) set.add(shiftKey(currentKey(), i));
+    set.add(periodKey);
+    return Array.from(set).sort();
+}
+function openCopyModal() {
+    let from = shiftKey(periodKey, -1);
+    if (!(getPeriod(from).expenses || []).length) {
+        const earlier = Object.keys(data.periods).filter(k => k < periodKey && (data.periods[k].expenses || []).length).sort();
+        if (earlier.length) from = earlier[earlier.length - 1];
     }
+    copyState = { from, to: periodKey, plan: [] };
+    const keys = copyPeriodKeys();
+    const opt = (k, sel) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${periodLabel(k)}${(getPeriod(k).expenses || []).length ? ` · ${getPeriod(k).expenses.length} gastos` : ''}</option>`;
+    $('copyFrom').innerHTML = keys.map(k => opt(k, from)).join('');
+    $('copyTo').innerHTML = keys.map(k => opt(k, periodKey)).join('');
+    refreshCopyPlan();
+    $('copyModal').style.display = 'flex';
+}
+function closeCopyModal() { copyState = null; $('copyModal').style.display = 'none'; }
+function refreshCopyPlan() {
+    if (!copyState) return;
+    copyState.from = $('copyFrom').value; copyState.to = $('copyTo').value;
+    const box = $('copyPreview');
+    if (copyState.from === copyState.to) {
+        copyState.plan = []; box.innerHTML = '<div class="fin-empty">Elegí dos períodos distintos.</div>'; updateCopyBtn(); return;
+    }
+    const plan = copyState.plan = planCopy(copyState.from, copyState.to);
+    if (!plan.length) { box.innerHTML = `<div class="fin-empty">${periodLabel(copyState.from)} no tiene gastos.</div>`; updateCopyBtn(); return; }
+    box.innerHTML = plan.map((it, i) => `<label class="copy-row ${it.ok ? '' : 'off'}">
+        <input type="checkbox" data-i="${i}" ${it.ok && !it.dup ? 'checked' : ''} ${it.ok ? '' : 'disabled'} />
+        <span class="copy-main"><b>${escapeHtml(it.name)}</b>${it.note ? `<small>${escapeHtml(it.note)}</small>` : ''}</span>
+        <span class="copy-amt">${fmtMoney(it.x.amount)}</span></label>`).join('');
+    updateCopyBtn();
+}
+function updateCopyBtn() {
+    const n = $('copyPreview').querySelectorAll('input:checked').length;
+    const btn = $('copySaveBtn');
+    btn.disabled = n === 0;
+    btn.innerHTML = `<i class="fas fa-paste"></i> Copiar ${n} ${n === 1 ? 'gasto' : 'gastos'}`;
+}
+function saveCopyModal() {
+    if (!copyState) return;
+    const picked = Array.from($('copyPreview').querySelectorAll('input:checked')).map(c => copyState.plan[+c.dataset.i]);
+    if (!picked.length) return;
+    const to = copyState.to;
     snapshot();
-    let n = 0, skipped = 0;
-    for (const x of prev.expenses) {
-        if (/adelanto/i.test(x.name)) { skipped++; continue; }
-        const name = nextInstallment(x.name);
-        if (name === null) { skipped++; continue; }
-        p.expenses.push({ id: nextId(p.expenses), name, amount: x.amount, paid: false, due: x.due || 0 });
-        n++;
-    }
-    saveData(); renderAll();
-    showUndoToast(`Copiados ${n} ${n === 1 ? 'gasto' : 'gastos'}${skipped ? ` (${skipped} no se copian: cuotas terminadas o adelantos)` : ''}`);
+    const p = ensurePeriod(to);
+    picked.forEach(it => p.expenses.push({ id: nextId(p.expenses), name: it.name, amount: it.x.amount, paid: false, due: it.x.due || 0 }));
+    periodKey = to;
+    closeCopyModal(); saveData(); renderAll();
+    showUndoToast(`Copiados ${picked.length} ${picked.length === 1 ? 'gasto' : 'gastos'} a ${periodLabel(to)}`);
 }
 
 // ============================================================
@@ -1432,10 +1483,16 @@ function init() {
         else if (act === 'pay') togglePaid(id);
         else if (act === 'recv') toggleReceived(id);
         else if (act === 'salary-toggle') toggleSalary();
-        else if (act === 'copy-prev') copyPrevExpenses();
+        else if (act === 'copy-prev') openCopyModal();
         else if (act === 'period-settings') openPeriodModal();
         else if (act === 'load-receipts') loadReceipts();
     });
+    $('copyFrom').addEventListener('change', refreshCopyPlan);
+    $('copyTo').addEventListener('change', refreshCopyPlan);
+    $('copyPreview').addEventListener('change', updateCopyBtn);
+    $('copyCancelBtn').addEventListener('click', closeCopyModal);
+    $('copySaveBtn').addEventListener('click', saveCopyModal);
+    $('copyModal').addEventListener('click', ev => { if (ev.target.id === 'copyModal') closeCopyModal(); });
     $('itemCancelBtn').addEventListener('click', closeItemModal);
     $('itemSaveBtn').addEventListener('click', saveItemModal);
     $('itemModal').addEventListener('click', ev => { if (ev.target.id === 'itemModal') closeItemModal(); });
