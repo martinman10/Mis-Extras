@@ -315,13 +315,16 @@ function calc(key) {
     const hoursAll = sumBy(list, entryHours);
     const hoursDone = sumBy(list.filter(e => e.done), entryHours);
     const rate = eff('rate'), base = eff('base');
-    const extras = hoursDone * rate;
+    const extrasWorked = hoursDone * rate;
+    // horas hechas en este período que me pagan el mes siguiente (y las que llegan del período anterior)
+    const defer = Math.min(p.hDefer || 0, hoursDone), carry = getPeriod(shiftKey(key, -1)).hDefer || 0;
+    const deferPay = defer * rate, carryPay = carry * rate;
+    const extras = extrasWorked - deferPay + carryPay;
     const extrasPending = (hoursAll - hoursDone) * rate;
     const night = p.night || 0, weekend = p.weekend || 0;
     const nightPay = night * eff('nightRate'), weekendPay = weekend * eff('weekendRate');
     const total = base + extras + nightPay + weekendPay;
-    const devol = p.devol || 0, cobroReal = 0, cobro = total + devol; // sueldo = base + extras (+ nocturnas/finde), sin descuentos, como el Excel
-   ; // como COBRE + DEVOLUCIONES del Excel
+    const devol = p.devol || 0, cobroReal = 0, cobro = total + devol; // sueldo = base + extras pagas (+ nocturnas/finde)
     const goal = p.goal != null ? p.goal : s.goal;
     const min = p.min != null ? p.min : s.min;
     const expenses = p.expenses || [], incomes = p.incomes || [];
@@ -330,7 +333,7 @@ function calc(key) {
     const advance = sumBy(expenses.filter(x => /adelanto/i.test(x.name)), x => x.amount);
     return {
         key, range: r, list, hoursAll, hoursDone, hoursPending: hoursAll - hoursDone,
-        rate, base, extras, extrasPending, night, weekend, nightPay, weekendPay, total, cobro, cobroReal, devol,
+        rate, base, extras, extrasWorked, defer, carry, deferPay, carryPay, extrasPending, night, weekend, nightPay, weekendPay, total, cobro, cobroReal, devol,
         goal, min, remaining: Math.max(0, goal - hoursAll), remainingMin: Math.max(0, min - hoursAll),
         expenses, incomes, expTotal, incTotal, ag, agAmount, advance, net: total - advance,
         left: cobro + incTotal - expTotal, salaryReceived: !!p.salaryReceived,
@@ -526,7 +529,9 @@ function renderSummary() {
     // --- cuánto se cobra
     let lines = '';
     lines += `<div class="hero-line"><span>Sueldo base</span><b>${fmtMoney(c.base)}</b></div>`;
-    lines += `<div class="hero-line"><span>Extras hechas (${fmtHours(c.hoursDone)} h)</span><b>${fmtMoney(c.extras)}</b></div>`;
+    lines += `<div class="hero-line"><span>Extras hechas (${fmtHours(c.hoursDone)} h)</span><b>${fmtMoney(c.extrasWorked)}</b></div>`;
+    if (c.defer > 0) lines += `<div class="hero-line"><span>− ${fmtHours(c.defer)} h que pagan el mes que viene</span><b>− ${fmtMoney(c.deferPay)}</b></div>`;
+    if (c.carry > 0) lines += `<div class="hero-line"><span>+ ${fmtHours(c.carry)} h del período anterior</span><b>+ ${fmtMoney(c.carryPay)}</b></div>`;
     if (c.night) lines += `<div class="hero-line"><span>Nocturnas (${fmtHours(c.night)} h)</span><b>${fmtMoney(c.nightPay)}</b></div>`;
     if (c.weekend) lines += `<div class="hero-line"><span>Fin de semana (${fmtHours(c.weekend)} h)</span><b>${fmtMoney(c.weekendPay)}</b></div>`;
     if (c.hoursPending > 0 && c.rate) lines += `<div class="hero-line"><span>Extras por hacer (${fmtHours(c.hoursPending)} h)</span><b>+ ${fmtMoney(c.extrasPending)}</b></div>`;
@@ -612,19 +617,19 @@ function openPeriodModal() {
     $('periodModalTitle').textContent = `Ajustar ${monthName(month).toLowerCase()} ${year}`;
     $('perGoal').value = numToInput(c.goal); $('perMin').value = numToInput(c.min);
     $('perNight').value = numToInput(c.night); $('perWeekend').value = numToInput(c.weekend);
-    $('perCobro').value = numToInput(c.cobroReal); $('perDevol').value = numToInput(c.devol);
+    $('perDefer').value = numToInput(getPeriod(periodKey).hDefer); $('perCobro').value = numToInput(c.cobroReal); $('perDevol').value = numToInput(c.devol);
     $('periodModal').style.display = 'flex';
 }
 function closePeriodModal() { $('periodModal').style.display = 'none'; }
 function savePeriodModal() {
     const goal = parseNum($('perGoal').value), min = parseNum($('perMin').value);
     const night = parseNum($('perNight').value), weekend = parseNum($('perWeekend').value);
-    const cobroReal = parseNum($('perCobro').value), devol = parseNum($('perDevol').value);
-    if ([goal, min, night, weekend, cobroReal, devol].some(v => Number.isNaN(v) || (v != null && v < 0))) { showToast('Revisá los números'); return; }
+    const cobroReal = parseNum($('perCobro').value), devol = parseNum($('perDevol').value), hDefer = parseNum($('perDefer').value);
+    if ([goal, min, night, weekend, cobroReal, devol, hDefer].some(v => Number.isNaN(v) || (v != null && v < 0))) { showToast('Revisá los números'); return; }
     const p = ensurePeriod(periodKey);
     p.goal = goal == null ? data.settings.goal : goal;
     p.min = min == null ? data.settings.min : min;
-    p.night = night || 0; p.weekend = weekend || 0; p.cobroReal = cobroReal || 0; p.devol = devol || 0; delete p.haberes;
+    p.night = night || 0; p.weekend = weekend || 0; p.cobroReal = cobroReal || 0; p.devol = devol || 0; p.hDefer = hDefer || 0; delete p.haberes;
     saveData(); closePeriodModal(); renderAll(); showToast('Mes actualizado');
 }
 
@@ -979,7 +984,7 @@ function exportCsv() {
     const rows = [['Fecha', 'Desde', 'Hasta', 'Horas', 'Valor $', 'Hecha', 'Comentario']];
     c.list.forEach(e => rows.push([e.date, e.start, e.end, num(entryHours(e)), num(entryHours(e) * c.rate), e.done ? 'Sí' : 'No', e.comment]));
     rows.push([]);
-    rows.push(['Horas hechas', '', '', num(c.hoursDone), num(c.extras)]);
+    rows.push(['Horas hechas', '', '', num(c.hoursDone), num(c.extrasWorked)]);
     rows.push(['Horas por hacer', '', '', num(c.hoursPending), num(c.extrasPending)]);
     rows.push(['Sueldo base', '', '', '', num(c.base)]);
     rows.push(['Total del mes', '', '', '', num(c.total)]);
@@ -1007,7 +1012,9 @@ function exportBlocks(c) {
     b.push({ head: ['DIA', 'DESDE', 'HASTA', 'CANTIDAD'], kinds: ['t', 't', 't', 'h'],
         rows: c.list.map(e => [expDM(e.date), e.start, e.end, r2(entryHours(e))]),
         foot: [['TOTAL', '', '', r2(c.hoursAll)], ['HECHAS', '', '', r2(c.hoursDone)], ['POR HACER', '', '', r2(c.hoursPending)]] });
-    const cobro = [['Sueldo base', r2(c.base)], [`Extras hechas (${fmtHours(c.hoursDone)} h)`, r2(c.extras)]];
+    const cobro = [['Sueldo base', r2(c.base)], [`Extras hechas (${fmtHours(c.hoursDone)} h)`, r2(c.extrasWorked)]];
+    if (c.defer > 0) cobro.push([`− ${fmtHours(c.defer)} h que pagan el mes que viene`, -r2(c.deferPay)]);
+    if (c.carry > 0) cobro.push([`+ ${fmtHours(c.carry)} h del período anterior`, r2(c.carryPay)]);
     if (c.night) cobro.push([`Nocturnas (${fmtHours(c.night)} h)`, r2(c.nightPay)]);
     if (c.weekend) cobro.push([`Fin de semana (${fmtHours(c.weekend)} h)`, r2(c.weekendPay)]);
     const cf = [['TOTAL DEL MES', r2(c.total)]];
