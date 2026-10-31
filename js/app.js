@@ -19,6 +19,8 @@ const DEFAULT_SETTINGS = {
     workStart: ''   // 'AAAA-MM': primer mes de cobro (el aguinaldo no cuenta meses anteriores)
 };
 const FROZEN_FIELDS = ['rate', 'base', 'nightRate', 'weekendRate'];
+// Un período solo conserva sus valores propios si ya apretaste "Ya cobré el sueldo"; si no, vale lo de Ajustes.
+function effField(p, f, s) { return (p.salaryReceived && p[f] > 0) ? p[f] : s[f]; }
 
 // ============================================================
 //  APARIENCIA (color + claro/oscuro)
@@ -285,7 +287,7 @@ function sumBy(list, fn) { return list.reduce((s, x) => s + fn(x), 0); }
 const AGUINALDO_DUE = { 5: { day: 30, text: '30 de junio' }, 11: { day: 20, text: '20 de diciembre' } };
 function periodTotal(key) {
     const p = getPeriod(key), s = data.settings, r = periodRange(key);
-    const eff = f => (p[f] > 0 ? p[f] : s[f]);
+    const eff = f => effField(p, f, s);
     const hDone = sumBy(data.entries.filter(e => e.done && e.date >= r.start && e.date <= r.end), entryHours);
     return eff('base') + hDone * eff('rate') + (p.night || 0) * eff('nightRate') + (p.weekend || 0) * eff('weekendRate');
 }
@@ -309,7 +311,7 @@ function daysText(n) { return n === 0 ? 'hoy' : n === 1 ? 'mañana' : n > 0 ? `e
 
 function calc(key) {
     const p = getPeriod(key), s = data.settings;
-    const eff = f => (p[f] > 0 ? p[f] : s[f]); // 0 en un período = sin cargar → vale lo de Ajustes
+    const eff = f => effField(p, f, s); // período cobrado = conserva su valor; si no, vale lo de Ajustes
     const r = periodRange(key);
     const list = data.entries.filter(e => e.date >= r.start && e.date <= r.end).sort(byDateTime);
     const hoursAll = sumBy(list, entryHours);
@@ -404,7 +406,7 @@ let currentMonth = hoyMVD().month;
 let selectedDate = todayStr();
 let currentTab = 'tabCalendar';
 
-function rateFor(ds) { const p = getPeriod(periodKeyOf(ds)); return p.rate > 0 ? p.rate : data.settings.rate; }
+function rateFor(ds) { const p = getPeriod(periodKeyOf(ds)); return effField(p, 'rate', data.settings); }
 function entriesOn(ds) { return data.entries.filter(e => e.date === ds).sort(byDateTime); }
 function dayStatus(ds) {
     const l = entriesOn(ds);
@@ -769,7 +771,13 @@ function toggleReceived(id) {
     const x = ensurePeriod(periodKey).incomes.find(y => y.id === id);
     if (x) { x.received = !x.received; saveData(); renderAll(); }
 }
-function toggleSalary() { const p = ensurePeriod(periodKey); p.salaryReceived = !p.salaryReceived; saveData(); renderAll(); }
+function toggleSalary() {
+    const p = ensurePeriod(periodKey), s = data.settings;
+    p.salaryReceived = !p.salaryReceived;
+    // al cobrar se traba el período con los valores de ese momento; al destildar vuelve a seguir a Ajustes
+    FROZEN_FIELDS.forEach(f => { if (p.salaryReceived) { if (s[f] > 0) p[f] = s[f]; } else delete p[f]; });
+    saveData(); renderAll();
+}
 function togglePaid(id) {
     const x = ensurePeriod(periodKey).expenses.find(y => y.id === id);
     if (x) { x.paid = !x.paid; saveData(); renderAll(); }
@@ -1132,7 +1140,7 @@ function openSettings() {
     $('setGoal').value = numToInput(s.goal); $('setMin').value = numToInput(s.min);
     $('setWorkStart').value = s.workStart || '';
     pendingTheme = s.theme || THEME_DEFAULT;
-    renderThemeSwatches(); renderModeSeg(); updateSettingsAvatar(); renderCloud();
+    renderThemeSwatches(); renderModeSeg(); updateSettingsAvatar(); renderCloud(); refreshPushUi();
     $('settingsError').style.display = 'none';
     $('settingsBody').scrollTop = 0;
     $('settingsModal').style.display = 'flex';
@@ -1162,7 +1170,7 @@ function saveSettings() {
         rate: vals.rate || 0, base: vals.base || 0, nightRate: vals.nightRate || 0, weekendRate: vals.weekendRate || 0,
         goal: vals.goal == null ? DEFAULT_SETTINGS.goal : vals.goal, min: vals.min == null ? DEFAULT_SETTINGS.min : vals.min
     };
-    // los períodos anteriores al actual conservan los valores que tenían antes del cambio
+    // los períodos anteriores al actual que ya marcaste como cobrados conservan los valores que tenían antes del cambio
     const changed = FROZEN_FIELDS.filter(f => (s[f] || 0) > 0 && (s[f] || 0) !== next[f]); // solo si ya había un valor cargado
     if (changed.length) {
         const cur = currentKey();
@@ -1171,6 +1179,7 @@ function saveSettings() {
         keys.forEach(k => {
             if (k >= cur) return;
             const p = ensurePeriod(k);
+            if (!p.salaryReceived) return; // sin "cobré" no se traba: toma el valor nuevo
             changed.forEach(f => { if (p[f] == null) p[f] = s[f] || 0; });
         });
     }
@@ -1285,10 +1294,10 @@ async function cloudInit() {
     renderCloud();
     if (!cloudConfigured()) return;
     try {
-        for (const f of ['app', 'auth', 'firestore']) if (!(await loadScript(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${f}-compat.js`))) throw new Error('sin internet');
+        for (const f of ['app', 'auth', 'firestore', 'messaging']) if (!(await loadScript(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${f}-compat.js`))) throw new Error('sin internet');
         firebase.initializeApp(window.MIS_EXTRAS_FIREBASE);
         cloud.auth = firebase.auth(); cloud.db = firebase.firestore(); cloud.ready = true;
-        cloud.auth.onAuthStateChanged(u => { cloud.user = u; renderCloud(); if (u) cloudCheck(); });
+        cloud.auth.onAuthStateChanged(u => { cloud.user = u; renderCloud(); refreshPushUi(); if (u) { cloudCheck(); syncPushToken(); } });
     } catch (e) { console.warn('Nube no disponible', e); }
     renderCloud();
 }
@@ -1349,6 +1358,80 @@ async function cloudCheck() {
         cloudStatus('ok');
     } catch (e) { cloudStatus(navigator.onLine ? 'error' : 'offline'); }
     finally { cloud.busy = false; }
+}
+
+// ============================================================
+//  AVISOS (notificaciones push) — Firebase Cloud Messaging
+//  La Cloud Function (carpeta /functions) avisa: (1) la noche anterior si hay extras al otro día
+//  y (2) 2 horas antes de cada extra, el mismo día. El token de cada dispositivo se guarda
+//  en avisos/{uid}.fcmTokens (aparte de extras/{uid}, para que la copia en la nube no lo pise).
+// ============================================================
+const PUSH_TOKEN_KEY = 'hxyo_push_token_';
+function pushSupported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window &&
+        !!(window.firebase && firebase.messaging && firebase.messaging.isSupported && firebase.messaging.isSupported());
+}
+function pushConfigured() { const v = window.MIS_EXTRAS_VAPID; return !!v && !String(v).startsWith('PEGAR'); }
+function getSavedPushToken() { try { return cloud.user ? localStorage.getItem(PUSH_TOKEN_KEY + cloud.user.uid) : null; } catch (_) { return null; } }
+function pushOn() { return !!(cloud.user && pushSupported() && pushConfigured() && Notification.permission === 'granted' && getSavedPushToken()); }
+function avisosRef() { return cloud.db.collection('avisos').doc(cloud.user.uid); }
+async function fetchPushToken() {
+    const reg = await navigator.serviceWorker.ready;
+    return firebase.messaging().getToken({ vapidKey: window.MIS_EXTRAS_VAPID, serviceWorkerRegistration: reg });
+}
+async function savePushToken(token) {
+    await avisosRef().set({ fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) }, { merge: true });
+    try { localStorage.setItem(PUSH_TOKEN_KEY + cloud.user.uid, token); } catch (_) {}
+}
+async function enablePush() {
+    if (!cloudConfigured()) { showToast('Primero hay que configurar Firebase', 3000); return; }
+    if (!cloud.user) { showToast('Primero entrá con Google en “Copia en la nube”', 3500); return; }
+    if (!pushSupported()) { showToast('Este navegador no soporta avisos. En iPhone, primero agregá la app a la pantalla de inicio.', 5000); return; }
+    if (!pushConfigured()) { showToast('Falta pegar la clave VAPID en firebase-config.js', 4000); return; }
+    try {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') { showToast('No diste permiso para los avisos. Podés activarlo desde los ajustes del navegador.', 4500); refreshPushUi(); return; }
+        const token = await fetchPushToken();
+        if (!token) throw new Error('sin token');
+        await savePushToken(token);
+        showToast('Avisos activados en este dispositivo');
+    } catch (err) { console.error('Error activando avisos', err); showToast('No se pudieron activar los avisos'); }
+    refreshPushUi();
+}
+async function disablePush() {
+    if (!cloud.user) return;
+    const token = getSavedPushToken();
+    try {
+        if (token) await avisosRef().set({ fcmTokens: firebase.firestore.FieldValue.arrayRemove(token) }, { merge: true });
+        try { await firebase.messaging().deleteToken(); } catch (_) {}
+        try { localStorage.removeItem(PUSH_TOKEN_KEY + cloud.user.uid); } catch (_) {}
+        showToast('Avisos desactivados en este dispositivo');
+    } catch (err) { console.error('Error desactivando avisos', err); showToast('No se pudieron desactivar los avisos'); }
+    refreshPushUi();
+}
+// Los tokens pueden cambiar con el tiempo: si ya estaban activados, se vuelven a guardar solos.
+async function syncPushToken() {
+    try {
+        if (!cloud.user || !pushSupported() || !pushConfigured()) return;
+        if (Notification.permission !== 'granted' || !getSavedPushToken()) return;
+        const token = await fetchPushToken();
+        if (token) await savePushToken(token);
+    } catch (err) { console.warn('No se pudo actualizar el token de avisos', err); }
+    refreshPushUi();
+}
+function refreshPushUi() {
+    const btn = $('pushToggleBtn'), hint = $('pushHint');
+    if (!btn || !hint) return;
+    const on = pushOn();
+    btn.classList.toggle('on', on);
+    btn.classList.toggle('is-unavailable', !cloudConfigured() || !cloud.user || !pushSupported() || (window.Notification && Notification.permission === 'denied'));
+    btn.setAttribute('aria-checked', on ? 'true' : 'false');
+    if (!cloudConfigured()) hint.textContent = 'Falta configurar Firebase.';
+    else if (!cloud.user) hint.textContent = 'Primero entrá con Google (Copia en la nube).';
+    else if (!pushSupported()) hint.textContent = 'Este navegador no permite avisos. En iPhone, primero instalá la app en la pantalla de inicio.';
+    else if (!pushConfigured()) hint.textContent = 'Falta pegar la clave VAPID en firebase-config.js.';
+    else if (Notification.permission === 'denied') hint.textContent = 'Están bloqueados. Activalos desde los ajustes del navegador.';
+    else hint.textContent = 'Te aviso la noche anterior y 2 horas antes de cada extra.';
 }
 
 // ============================================================
@@ -1542,6 +1625,7 @@ function init() {
     $('toast').addEventListener('click', ev => { if (ev.target.closest('#toastUndo')) undoLast(); else if (ev.target.closest('#toastReload')) location.reload(); });
     if ('serviceWorker' in navigator) { const had = !!navigator.serviceWorker.controller; navigator.serviceWorker.addEventListener('controllerchange', () => { if (!had) return; const el = $('toast'); el.innerHTML = '<span>Hay una versión nueva</span><button type="button" class="toast-undo" id="toastReload">Actualizar</button>'; el.classList.add('show', 'has-action'); clearTimeout(toastTimeout); }); }
     $('cloudBtn').addEventListener('click', cloudButton);
+    $('pushToggleBtn').addEventListener('click', () => { if (pushOn()) disablePush(); else enablePush(); });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) cloudCheck(); });
     window.addEventListener('online', cloudCheck);
     cloudInit();
