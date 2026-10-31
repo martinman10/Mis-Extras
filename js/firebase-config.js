@@ -12,4 +12,4 @@ window.MIS_EXTRAS_FIREBASE = {
 
 // Clave pública VAPID para los avisos (Firebase Console → Configuración del proyecto → Cloud Messaging
 // → "Certificados push web" → Generar par de claves). Pegala acá, entre las comillas.
-window.MIS_EXTRAS_VAPID = 'PEGAR_AQUI_LA_CLAVE_VAPID';
+window.MIS_EXTRAS_VAPID = 'BB2OmDrRX3bYvu6gEIlOsST0r2xGPPVGYt0etpB_0bWyZx87LoMOXrUh4l4q0uv1agE4xGXy_Ki9HyByQGDei2w';
