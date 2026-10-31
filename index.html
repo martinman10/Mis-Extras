@@ -187,7 +187,7 @@
                     <input type="month" id="setWorkStart" />
                 </div>
                 <p class="field-hint">Los meses anteriores a ese no suman en el aguinaldo. Dejalo vacío si trabajaste todo el semestre.</p>
-                <p class="field-hint">Si cambiás un valor, los meses anteriores conservan el que tenían.</p>
+                <p class="field-hint">Si cambiás un valor, solo los meses que ya marcaste como cobrados conservan el que tenían.</p>
             </div>
 
             <div class="pf-section">
@@ -204,6 +204,19 @@
                 </div>
             </div>
 
+            <div class="pf-section">
+                <label>Avisos</label>
+                <div class="pf-list">
+                    <button type="button" class="pf-row" id="pushToggleBtn" role="switch" aria-checked="false">
+                        <span class="pf-row-ic"><i class="fas fa-bell"></i></span>
+                        <span class="pf-row-text">
+                            <span class="pf-row-title">Avisos de mis extras</span>
+                            <small class="pf-row-sub" id="pushHint"></small>
+                        </span>
+                        <span class="pf-switch" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </div>
             <div class="pf-section">
                 <label>Copia en la nube</label>
                 <div class="pf-list">
