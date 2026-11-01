@@ -1029,7 +1029,7 @@ function barRich(done, goal) {
 function buildMainSheet(wb, c, year, month) {
     const ws = wb.addWorksheet(`${monthName(month)} ${year}`.slice(0, 31), { views: [{ showGridLines: false }] });
     ws.columns = [{ width: 18 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 14 }];
-    const thin = { style: 'thin', color: { argb: 'FF444444' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
+    const thin = { style: 'thin', color: { argb: 'FF000000' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
     const fill = rgb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + rgb } });
     const money = '"$"#,##0.00', hrs = '0.##';
     const T = '7EA6D9', B = EXP_BLUE, G = EXP_GRAY, P = 'F4CCCC', V = 'B6D7A8', V2 = '93C47D';
@@ -1047,6 +1047,7 @@ function buildMainSheet(wb, c, year, month) {
             }
             const cell = row.getCell(col);
             cell.value = val;
+            if (val === '☑' || val === '☐') cell.font = { bold: true, size: 16 };
             if (fmt && typeof val === 'number') cell.numFmt = fmt;
             if (n > 1) ws.mergeCells(row.number, col, row.number, col + n - 1);
             col += n;
@@ -1062,6 +1063,7 @@ function buildMainSheet(wb, c, year, month) {
         const h = entryHours(e);
         addRow([[expDM(e.date), B], [e.start, G], [e.end, G], [r2(h), G, hrs], [r2(h * rate), G, money], [e.done ? '☑' : '☐', e.done ? B : G]]);
     });
+    for (let i = c.list.length; i < 18; i++) addRow([['', B], ['', G], ['', G], ['', G], ['', G], ['☐', G]]); // filas libres como en la planilla
     addRow([['TOTAL', B], ['', B, null, 2], [r2(c.hoursAll), P, hrs], [r2(c.hoursAll * rate), V, money, 2]]);
     spacer();
 
