@@ -284,6 +284,9 @@ function sumBy(list, fn) { return list.reduce((s, x) => s + fn(x), 0); }
 //  Medio aguinaldo = suma de lo ganado en el semestre ÷ 12.
 //  Acá: los 6 períodos que se cobran de ene–jun (o jul–dic), cada uno = base + extras hechas + nocturnas + finde.
 // ============================================================
+// Ajuste empírico: la estimación parte de sueldos LÍQUIDOS (sin recibos nominales). Se multiplica por 1,15 para compensar
+// que el aguinaldo se cobra con menos retenciones que el sueldo. El salario vacacional / licencia no entra (no genera aguinaldo).
+const AGUINALDO_AJUSTE = 1.15;
 const AGUINALDO_DUE = { 5: { day: 30, text: '30 de junio' }, 11: { day: 20, text: '20 de diciembre' } };
 function periodTotal(key) {
     const p = getPeriod(key), s = data.settings, r = periodRange(key);
@@ -300,7 +303,7 @@ function aguinaldoInfo(key) {
     const sum = sumBy(keys, k => (ws && k < ws) ? 0 : periodTotal(k));
     const dueDate = new Date(year, month, due.day);
     const manual = (getPeriod(key).incomes || []).some(x => /aguinaldo/i.test(x.name));
-    return { key, amount: Math.round(sum / 12 * 100) / 100, sum, keys, dueDate, dueText: due.text, manual,
+    return { key, amount: Math.round(sum / 12 * AGUINALDO_AJUSTE * 100) / 100, sum, keys, dueDate, dueText: due.text, manual,
         daysLeft: Math.round((dueDate - hoyDate()) / 86400000) };
 }
 function nextAguinaldoKey(fromKey) {
@@ -679,7 +682,7 @@ function renderMoney() {
         const here = !!c.ag;
         const manualAmt = here && ag.manual ? sumBy(c.incomes.filter(x => /aguinaldo/i.test(x.name)), x => x.amount) : null;
         const note = here && ag.manual ? `Se usa el que cargaste. La app estima ${fmtMoney(ag.amount)} (diferencia ${fmtMoney((manualAmt || 0) - ag.amount)}).`
-            : `Suma de los 6 cobros de ${fmtMes(ag.keys[0])} a ${fmtMes(ag.keys[5])} (${fmtMoney(ag.sum)}) ÷ 12. Es una estimación con lo que tenés cargado.`;
+            : `Suma de los 6 cobros de ${fmtMes(ag.keys[0])} a ${fmtMes(ag.keys[5])} (${fmtMoney(ag.sum)}) ÷ 12, más 15% porque el aguinaldo se cobra con menos descuentos. Es una estimación con lo que tenés cargado.`;
         return `<div class="card">
             <div class="card-head"><h3>${here ? 'Aguinaldo' : 'Próximo aguinaldo'}</h3><span class="card-aside">${ag.dueText}</span></div>
             <div class="fin-big">${fmtMoney(manualAmt != null ? manualAmt : ag.amount)}</div>
