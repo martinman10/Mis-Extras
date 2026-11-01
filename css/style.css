@@ -879,3 +879,9 @@
 .copy-main small { font-size: 12px; color: var(--text-secondary); line-height: 1.35; }
 .copy-amt { font-size: 14px; font-weight: 600; white-space: nowrap; }
 #copySaveBtn:disabled { opacity: 0.5; }
+
+/* Resumen: proyección si se hacen las extras pendientes (no suma en el total) */
+.hero-proj { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 12px; padding: 10px 12px; border: 1.5px dashed rgba(128,128,128,.6); border-radius: var(--radius-sm); font-size: 14px; }
+.hero-proj span { opacity: .9; }
+.hero-proj b { font-weight: 800; font-size: 16px; white-space: nowrap; }
+.hero-proj-sub { font-size: 12px; opacity: .8; margin-top: 6px; }
