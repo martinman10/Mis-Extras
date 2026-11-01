@@ -1251,7 +1251,7 @@ async function exportPdf() {
 const CLOUD_TS_KEY = 'hxyo_cloud_ts';        // cuándo cambió por última vez lo de este dispositivo
 const CLOUD_SYNCED_KEY = 'hxyo_cloud_synced'; // versión de la nube con la que quedó igual la última vez
 const FB_VER = '10.13.2';
-const cloud = { ready: false, user: null, db: null, auth: null, status: 'ok', timer: null, busy: false };
+const cloud = { ready: false, user: null, db: null, auth: null, status: 'ok', timer: null, busy: false, lastJson: null, backupAt: 0, backupN: 0 };
 const lsNum = k => Number(localStorage.getItem(k)) || 0;
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 function cloudConfigured() { const c = window.MIS_EXTRAS_FIREBASE; return !!(c && c.apiKey && c.projectId && c.appId); }
@@ -1260,6 +1260,7 @@ function cloudRef() { return cloud.db.collection('extras').doc(cloud.user.uid); 
 function cloudStatus(s) { cloud.status = s; renderCloud(); }
 function renderCloud() {
     const t = $('cloudTitle'); if (!t) return;
+    const rb = $('cloudRestoreBtn'); if (rb) rb.style.display = cloud.user ? '' : 'none';
     const sub = $('cloudSub'), hint = $('cloudHint');
     if (!cloudConfigured()) { t.textContent = 'Copia en la nube'; sub.textContent = 'Falta configurar Firebase (archivo firebase-config.js).'; hint.textContent = ''; return; }
     if (!cloud.user) { t.textContent = 'Entrar con Google'; sub.textContent = cloud.ready ? 'Guarda tus datos y los pasa de un celu a otro.' : 'Cargando… (necesita internet)'; hint.textContent = 'Sin entrar, todo sigue funcionando solo en este dispositivo.'; return; }
@@ -1293,12 +1294,25 @@ async function cloudButton() {
     const ok = await showConfirm({ title: '¿Cerrar sesión?', message: 'Tus datos siguen en este celu y en la nube. Dejan de sincronizarse hasta que vuelvas a entrar.', okText: 'Cerrar sesión', cancelText: 'Volver', warn: true });
     if (ok) { await cloud.auth.signOut(); renderCloud(); }
 }
+// Respaldo automático en la nube: guarda la versión anterior (como mucho cada 6 horas)
+// y no la reemplaza si la versión nueva quedó con menos de la mitad de extras (por ejemplo, si borraste todo).
+const BACKUP_EVERY = 6 * 3600 * 1000;
+function entriesIn(json) { try { return (JSON.parse(json).entries || []).length; } catch (_) { return 0; } }
 async function cloudPushNow(prevJson) {
     let ts = lsNum(CLOUD_TS_KEY); if (!ts) { ts = Date.now(); localStorage.setItem(CLOUD_TS_KEY, String(ts)); }
     cloudStatus('syncing');
-    const doc = { json: JSON.stringify(data), ts, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+    const nowJson = JSON.stringify(data);
+    const doc = { json: nowJson, ts, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
     if (prevJson) doc.prev = prevJson; // si pisás lo que había en la nube, queda la versión anterior guardada
-    await withTimeout(cloudRef().set(doc), 10000);
+    const old = prevJson || cloud.lastJson;
+    if (old && old !== nowJson) {
+        const n = entriesIn(old), now = Date.now();
+        const toca = !cloud.backupAt || now - cloud.backupAt > BACKUP_EVERY;
+        if (n > 0 && toca && n >= cloud.backupN * 0.5) { doc.backup = old; doc.backupAt = now; doc.backupN = n; }
+    }
+    await withTimeout(cloudRef().set(doc, { merge: true }), 10000);
+    if (doc.backup) { cloud.backupAt = doc.backupAt; cloud.backupN = doc.backupN; }
+    cloud.lastJson = nowJson;
     localStorage.setItem(CLOUD_SYNCED_KEY, String(ts));
     cloudStatus('ok');
 }
@@ -1318,15 +1332,40 @@ function cloudApply(c) {
     localStorage.setItem(CLOUD_TS_KEY, String(c.ts)); localStorage.setItem(CLOUD_SYNCED_KEY, String(c.ts));
     applyTheme(data.settings.theme); periodKey = currentKey(); applyProfileToHeader(); renderAll();
 }
+async function cloudRestoreBackup() {
+    if (!cloud.user || !cloud.db) { showToast('Primero entrá con Google'); return; }
+    let c;
+    try { c = (await withTimeout(cloudRef().get({ source: 'server' }), 10000)).data(); }
+    catch (_) { showToast('No se pudo leer la nube. Probá de nuevo.', 3000); return; }
+    const json = c && (c.backup || c.prev);
+    if (!json) { showToast('Todavía no hay una versión anterior guardada', 3000); return; }
+    let old;
+    try { old = normalizeData(JSON.parse(json)); } catch (_) { showToast('La versión guardada no se puede leer'); return; }
+    let when = 'una versión anterior';
+    if (c.backup && c.backupAt) { try { when = new Date(c.backupAt).toLocaleString('es-UY', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (_) {} }
+    const ok = await showConfirm({ title: '¿Recuperar la versión anterior?', message: `Guardada: ${when}. Trae ${old.entries.length} extras y ahora tenés ${data.entries.length}. Reemplaza lo que hay ahora, pero podés deshacerlo.`, okText: 'Recuperar', warn: true });
+    if (!ok) return;
+    snapshot();
+    data = old;
+    saveData();
+    applyTheme(data.settings.theme);
+    periodKey = currentKey();
+    applyProfileToHeader();
+    closeSettings(true);
+    renderAll();
+    showUndoToast('Versión anterior recuperada');
+}
 async function cloudCheck() {
     if (!cloud.user || !cloud.db || cloud.busy) return;
     cloud.busy = true; cloudStatus('syncing');
+    cloud.lastJson = null; cloud.backupAt = 0; cloud.backupN = 0;
     try {
         const snap = await withTimeout(cloudRef().get({ source: 'server' }), 10000);
         const ts = lsNum(CLOUD_TS_KEY), sy = lsNum(CLOUD_SYNCED_KEY);
         const dirty = ts > sy || (sy === 0 && hasLocalData());
         if (!snap.exists) { if (hasLocalData()) await cloudPushNow(); else cloudStatus('ok'); return; }
         const c = snap.data();
+        cloud.lastJson = c.json || null; cloud.backupAt = c.backupAt || 0; cloud.backupN = c.backupN || 0;
         if (c.ts === sy) { if (dirty) await cloudPushNow(); else cloudStatus('ok'); return; } // la nube no cambió
         if (!dirty) { cloudApply(c); cloudStatus('ok'); showToast('Datos al día desde la nube'); return; } // solo cambió la nube
         const useCloud = await showConfirm({ title: 'Hay datos distintos en la nube', message: 'Este celu y la nube tienen cambios distintos. ¿Cuáles dejo? Los otros se reemplazan (la versión anterior de la nube queda guardada).', okText: 'Usar los de la nube', cancelText: 'Usar los de este celu', warn: true });
@@ -1601,6 +1640,7 @@ function init() {
     $('toast').addEventListener('click', ev => { if (ev.target.closest('#toastUndo')) undoLast(); else if (ev.target.closest('#toastReload')) location.reload(); });
     if ('serviceWorker' in navigator) { const had = !!navigator.serviceWorker.controller; navigator.serviceWorker.addEventListener('controllerchange', () => { if (!had) return; const el = $('toast'); el.innerHTML = '<span>Hay una versión nueva</span><button type="button" class="toast-undo" id="toastReload">Actualizar</button>'; el.classList.add('show', 'has-action'); clearTimeout(toastTimeout); }); }
     $('cloudBtn').addEventListener('click', cloudButton);
+    $('cloudRestoreBtn').addEventListener('click', cloudRestoreBackup);
     $('pushToggleBtn').addEventListener('click', () => { if (pushOn()) disablePush(); else enablePush(); });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) cloudCheck(); });
     window.addEventListener('online', cloudCheck);
