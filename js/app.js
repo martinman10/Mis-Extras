@@ -801,29 +801,6 @@ function cuotasCard(c) {
         ${rows.map(r => `<div class="fin-sub"><span>${escapeHtml(r.name)} ${r.cur}/${r.tot} · ${r.left ? 'faltan ' + r.left : 'es la última'}</span><span>${fmtMoney(r.left * r.amt)}</span></div>`).join('')}
         <div class="fin-total"><span>Falta en cuotas después de este mes</span><span>${fmtMoney(debt)}</span></div>${frees}</div>`;
 }
-// Recibos de sueldo 2026: el líquido de cada mes va en el período del mes siguiente (cuando se cobra)
-const RECIBOS_2026 = { '2026-02': 35278.25, '2026-03': 49103.26, '2026-04': 38108.35, '2026-05': 41884.01, '2026-06': 25977.75, '2026-07': 33571.66, '2026-08': 31793.57, '2026-09': 31869.37, '2026-10': 28946.38, '2026-11': 33067.27 };
-const RECIBOS_EXTRA = [{ key: '2026-06', name: 'Aguinaldo', amount: 22099.18 }, { key: '2026-09', name: 'Licencia', amount: 12199.55 }];
-function applyReceipts() {
-    let n = 0;
-    for (const [k, v] of Object.entries(RECIBOS_2026)) {
-        const p = ensurePeriod(k);
-        if (!(p.cobroReal > 0)) { p.cobroReal = v; n++; }
-        if (k <= '2026-10' && p.salaryReceived === undefined) p.salaryReceived = true;
-    }
-    for (const x of RECIBOS_EXTRA) {
-        const p = ensurePeriod(x.key);
-        if (!p.incomes.some(i => i.name === x.name)) p.incomes.push({ id: nextId(p.incomes), name: x.name, amount: x.amount, received: true });
-    }
-    return n;
-}
-async function loadReceipts() {
-    const ok = await showConfirm({ title: '¿Cargar los recibos de 2026?', message: 'Pone el líquido de cada recibo como cobro real (febrero a noviembre) y suma el aguinaldo y la licencia como ingresos. No pisa lo que ya cargaste.', okText: 'Cargar' });
-    if (!ok) return;
-    snapshot();
-    const n = applyReceipts();
-    saveData(); renderAll(); showUndoToast(`Recibos cargados: ${n}`);
-}
 async function chainAdvance(amount) {
     const nk = shiftKey(periodKey, 1);
     const ok = await showConfirm({ title: '¿Descontarlo del próximo cobro?', message: `Se agrega un gasto "ADELANTO ${fmtMoney(amount)}" en el período que se cobra en ${monthName(parseKey(nk).month).toLowerCase()}, para que se descuente.`, okText: 'Agregar', cancelText: 'No' });
@@ -1575,7 +1552,6 @@ function init() {
         else if (act === 'salary-toggle') toggleSalary();
         else if (act === 'copy-prev') openCopyModal();
         else if (act === 'period-settings') openPeriodModal();
-        else if (act === 'load-receipts') loadReceipts();
     });
     $('copyFrom').addEventListener('change', refreshCopyPlan);
     $('copyTo').addEventListener('change', refreshCopyPlan);
@@ -1650,7 +1626,6 @@ function init() {
 
     // Atajos del manifest (#add, #calendar, #summary, #money)
     const hashTab = { '#add': 'tabAdd', '#calendar': 'tabCalendar', '#summary': 'tabSummary', '#money': 'tabMoney' }[location.hash];
-    try { if (!localStorage.getItem('hxyo_receipts_v1')) { const n = applyReceipts(); localStorage.setItem('hxyo_receipts_v1', '1'); if (n) { saveData(); setTimeout(() => showToast(`Recibos 2026 cargados (${n})`), 700); } } } catch (_) {}
     renderAll();
     if (hashTab) switchTab(hashTab);
     maybeShowInstallBanner();
