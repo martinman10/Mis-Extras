@@ -536,12 +536,16 @@ function renderSummary() {
     if (c.carry > 0) lines += `<div class="hero-line"><span>+ ${fmtHours(c.carry)} h del período anterior</span><b>+ ${fmtMoney(c.carryPay)}</b></div>`;
     if (c.night) lines += `<div class="hero-line"><span>Nocturnas (${fmtHours(c.night)} h)</span><b>${fmtMoney(c.nightPay)}</b></div>`;
     if (c.weekend) lines += `<div class="hero-line"><span>Fin de semana (${fmtHours(c.weekend)} h)</span><b>${fmtMoney(c.weekendPay)}</b></div>`;
-    if (c.hoursPending > 0 && c.rate) lines += `<div class="hero-line"><span>Extras por hacer (${fmtHours(c.hoursPending)} h)</span><b>+ ${fmtMoney(c.extrasPending)}</b></div>`;
     if (c.advance > 0) lines += `<div class="hero-line"><span>Subtotal antes del adelanto</span><b>${fmtMoney(c.total)}</b></div><div class="hero-line strong"><span>− Adelanto que ya cobraste</span><b>− ${fmtMoney(c.advance)}</b></div>`;
+    // Lo que falta por hacer NO suma en el total: se muestra aparte, como proyección
+    const proj = (c.hoursPending > 0 && c.rate)
+        ? `<div class="hero-proj"><span>Si hacés las ${fmtHours(c.hoursPending)} h que faltan</span><b>${fmtMoney((c.advance > 0 ? c.net : c.total) + c.extrasPending)}</b></div>
+           <div class="hero-proj-sub">Las pendientes no suman hasta que las marques como hechas.</div>` : '';
     const hero = `<div class="hero-card">
-        <div class="hero-label">${c.advance > 0 ? 'Total del mes · ya sin el adelanto' : 'Total del mes'}</div>
+        <div class="hero-label">${c.advance > 0 ? 'Total del mes · solo hechas, sin el adelanto' : 'Total del mes · solo extras hechas'}</div>
         <div class="hero-amount">${fmtMoney(c.advance > 0 ? c.net : c.total)}</div>
         <div class="hero-lines">${lines}</div>
+        ${proj}
         ${noValues ? `<div class="hero-hint"><i class="fas fa-circle-info"></i> Cargá tu valor hora y sueldo base en Ajustes (tocá tu perfil, arriba a la izquierda).</div>` : ''}
     </div>`;
 
