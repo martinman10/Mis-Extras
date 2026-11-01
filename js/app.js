@@ -999,20 +999,9 @@ function exportCsv() {
 const EXP_BLUE = 'A7C4E4', EXP_GRAY = 'F3F3F3';
 function expDM(d) { return `${+d.slice(8)}/${+d.slice(5, 7)}`; }
 function r2(n) { return Math.round(n * 100) / 100; }
+// Bloque "Plata" (solo para la 2ª hoja del Excel): gastos, ingresos y cuánto queda
 function exportBlocks(c) {
     const b = [];
-    b.push({ head: ['DIA', 'DESDE', 'HASTA', 'CANTIDAD'], kinds: ['t', 't', 't', 'h'],
-        rows: c.list.map(e => [expDM(e.date), e.start, e.end, r2(entryHours(e))]),
-        foot: [['TOTAL', '', '', r2(c.hoursAll)], ['HECHAS', '', '', r2(c.hoursDone)], ['POR HACER', '', '', r2(c.hoursPending)]] });
-    const cobro = [['Sueldo base', r2(c.base)], [`Extras hechas (${fmtHours(c.hoursDone)} h)`, r2(c.extrasWorked)]];
-    if (c.defer > 0) cobro.push([`− ${fmtHours(c.defer)} h que pagan el mes que viene`, -r2(c.deferPay)]);
-    if (c.carry > 0) cobro.push([`+ ${fmtHours(c.carry)} h del período anterior`, r2(c.carryPay)]);
-    if (c.night) cobro.push([`Nocturnas (${fmtHours(c.night)} h)`, r2(c.nightPay)]);
-    if (c.weekend) cobro.push([`Fin de semana (${fmtHours(c.weekend)} h)`, r2(c.weekendPay)]);
-    const cf = [['TOTAL DEL MES', r2(c.total)]];
-    if (c.advance > 0) cf.push(['TOTAL − ADELANTO', r2(c.net)]);
-    if (c.cobroReal) cf.push(['COBRO REAL', r2(c.cobroReal + c.devol)]);
-    b.push({ head: ['A COBRAR', 'VALOR EN $'], kinds: ['t', 'm'], rows: cobro, foot: cf });
     if (c.expenses.length) b.push({ head: ['GASTOS', 'VALOR EN $', '¿ESTÁ PAGO?'], kinds: ['t', 'm', 't'],
         rows: c.expenses.map(x => [x.name || 'Sin nombre', r2(x.amount), x.paid ? 'SÍ' : 'NO']),
         foot: [['TOTAL', r2(c.expTotal), ''], ['DEBO PAGAR', r2(c.expPending), '']] });
@@ -1028,32 +1017,107 @@ function loadExcelJs() {
     if (!exljsPromise) exljsPromise = loadScript('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js').then(ok => { if (!ok) exljsPromise = null; return ok; });
     return exljsPromise;
 }
-async function exportXlsx() {
-    const c = calc(periodKey), { year, month } = parseKey(periodKey), r = c.range;
-    if (!(await loadExcelJs())) { showToast('Sin conexión: se baja en formato simple (CSV)'); exportCsv(); return; }
-    const wb = new window.ExcelJS.Workbook();
+// Barra de progreso hecha con texto: ████░░░░░░░░
+function barRich(done, goal) {
+    const N = 12, k = goal > 0 ? Math.max(0, Math.min(N, Math.round(done / goal * N))) : 0;
+    const rt = [];
+    if (k) rt.push({ text: '█'.repeat(k), font: { color: { argb: 'FF3A5A8C' }, size: 12 } });
+    if (N - k) rt.push({ text: '█'.repeat(N - k), font: { color: { argb: 'FFE5E7EB' }, size: 12 } });
+    return { richText: rt };
+}
+// Arma la hoja principal igual que la planilla: celeste = títulos, rosa = horas/cantidades, verde = plata
+function buildMainSheet(wb, c, year, month) {
     const ws = wb.addWorksheet(`${monthName(month)} ${year}`.slice(0, 31), { views: [{ showGridLines: false }] });
-    ws.columns = [{ width: 30 }, { width: 15 }, { width: 15 }, { width: 15 }];
+    ws.columns = [{ width: 18 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 14 }];
+    const thin = { style: 'thin', color: { argb: 'FF444444' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
+    const fill = rgb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + rgb } });
+    const money = '"$"#,##0.00', hrs = '0.##';
+    const T = '7EA6D9', B = EXP_BLUE, G = EXP_GRAY, P = 'F4CCCC', V = 'B6D7A8', V2 = '93C47D';
+    // cada celda: [valor, color de fondo, formato, columnas que ocupa]
+    const addRow = (cells, h) => {
+        const row = ws.addRow([]); row.height = h || 22;
+        let col = 1;
+        cells.forEach(([val, rgb, fmt, span]) => {
+            const n = span || 1;
+            for (let i = 0; i < n; i++) {
+                const cell = row.getCell(col + i);
+                cell.fill = fill(rgb); cell.border = border;
+                cell.font = { bold: true, size: 12 };
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            }
+            const cell = row.getCell(col);
+            cell.value = val;
+            if (fmt && typeof val === 'number') cell.numFmt = fmt;
+            if (n > 1) ws.mergeCells(row.number, col, row.number, col + n - 1);
+            col += n;
+        });
+        return row;
+    };
+    const spacer = () => { const s = ws.addRow([]); s.height = 12; };
+    const rate = c.rate || 0;
+
+    addRow([[`A COBRAR EN ${monthName(month).toUpperCase()}`, T, null, 6]], 24);
+    addRow([['DIA', B], ['DESDE', B], ['HASTA', B], ['CANTIDAD', B], ['VALOR EN $', B], ['¿LAS HICE?', B]]);
+    c.list.forEach(e => {
+        const h = entryHours(e);
+        addRow([[expDM(e.date), B], [e.start, G], [e.end, G], [r2(h), G, hrs], [r2(h * rate), G, money], [e.done ? '☑' : '☐', e.done ? B : G]]);
+    });
+    addRow([['TOTAL', B], ['', B, null, 2], [r2(c.hoursAll), P, hrs], [r2(c.hoursAll * rate), V, money, 2]]);
+    spacer();
+
+    // Objetivo y mínimo: horas, plata, cuántas faltan y barra de progreso
+    const goalRow = (label, goal, falta) => {
+        const row = addRow([[label, B], [r2(goal), P, hrs], [r2(goal * rate), V, money], [r2(falta), P, hrs], ['PROGRESO', B], ['', 'FFFFFF']]);
+        const cell = row.getCell(6); cell.value = barRich(c.hoursAll, goal);
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+    };
+    goalRow('OBJETIVO', c.goal, c.remaining);
+    spacer();
+    goalRow('MINIMO', c.min, c.remainingMin);
+    spacer();
+
+    addRow([['TOTAL DEL MES', B], [r2(c.total), V, money]]);
+    spacer();
+    addRow([['NOCTURNAS', B], [r2(c.night), P, hrs], [r2(c.nightPay), V, money]]);
+    spacer();
+    addRow([['FINDE', B], [r2(c.weekend), P, hrs], [r2(c.weekendPay), V, money]]);
+    spacer();
+    addRow([['DEBO', B], [r2(c.expPending), P, '#,##0'], ['ME QUEDAN', B], [r2(c.left), V2, money, 2]]);
+    spacer();
+    addRow([['DIAS', B], ['DE 3HS', B], [Math.ceil(c.remaining / 3), P, '0'], ['DE 6HS', B], [Math.ceil(c.remaining / 6), P, '0']]);
+    if (c.advance > 0) { spacer(); addRow([['TOTAL - ADELANTO', B], [r2(c.net), V, money]]); }
+    return ws;
+}
+// 2ª hoja: gastos, ingresos y lo que queda
+function buildMoneySheet(wb, c) {
+    const ws = wb.addWorksheet('Plata', { views: [{ showGridLines: false }] });
+    ws.columns = [{ width: 30 }, { width: 15 }, { width: 15 }];
     const thin = { style: 'thin', color: { argb: 'FF000000' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
     const fill = rgb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + rgb } });
-    const t = ws.addRow([`A COBRAR EN ${monthName(month).toUpperCase()} ${year}`]); t.font = { bold: true, size: 14 };
-    const sub = ws.addRow([`Extras del ${fmtDayMonth(r.startDate)} al ${fmtDayMonth(r.endDate)}${data.settings.name ? ' · ' + data.settings.name : ''}`]); sub.font = { color: { argb: 'FF666666' }, size: 10 };
-    ws.addRow([]);
     const style = (cell, blue, kind) => {
         cell.fill = fill(blue ? EXP_BLUE : EXP_GRAY); cell.border = border; cell.font = { bold: true, size: 12 };
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
         if (kind === 'm' && typeof cell.value === 'number') cell.numFmt = '"$" #,##0.00';
-        else if (kind === 'h' && typeof cell.value === 'number') cell.numFmt = '0.##';
     };
     exportBlocks(c).forEach(bl => {
         if (!bl.onlyFoot) { const hr = ws.addRow(bl.head); hr.height = 22; hr.eachCell(cell => style(cell, true, 't')); }
-        bl.rows.forEach(row => { const rr = ws.addRow(row); rr.height = 20; rr.eachCell({ includeEmpty: true }, (cell, i) => { if (i <= bl.head.length) style(cell, i === 1, bl.kinds[i - 1]); }); });
-        bl.foot.forEach(row => { const rr = ws.addRow(row); rr.height = 20; rr.eachCell({ includeEmpty: true }, (cell, i) => { if (i <= bl.head.length) style(cell, i === 1, bl.kinds[i - 1]); }); });
+        [...bl.rows, ...bl.foot].forEach(row => { const rr = ws.addRow(row); rr.height = 20; rr.eachCell({ includeEmpty: true }, (cell, i) => { if (i <= bl.head.length) style(cell, i === 1, bl.kinds[i - 1]); }); });
         ws.addRow([]);
     });
-    const buf = await wb.xlsx.writeBuffer();
-    await downloadFile(`extras-${year}-${String(month + 1).padStart(2, '0')}.xlsx`, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    showToast('Excel listo');
+    return ws;
+}
+async function exportXlsx() {
+    const c = calc(periodKey), { year, month } = parseKey(periodKey);
+    if (!(await loadExcelJs())) { showToast('Sin conexión: se baja en formato simple (CSV)'); exportCsv(); return; }
+    try {
+        const wb = new window.ExcelJS.Workbook();
+        buildMainSheet(wb, c, year, month);
+        buildMoneySheet(wb, c);
+        const buf = await wb.xlsx.writeBuffer();
+        const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        await downloadFile(`extras-${year}-${String(month + 1).padStart(2, '0')}.xlsx`, new Blob([buf], { type: mime }), mime);
+        showToast('Excel listo');
+    } catch (e) { console.error(e); showToast('No se pudo armar el Excel'); }
 }
 function backupNow() {
     const payload = { app: 'horax-mis-extras', version: 1, exportedAt: new Date().toISOString(), data };
@@ -1223,15 +1287,42 @@ async function loadHtml2pdf() {
 }
 function pdfHtml(c) {
     const { year, month } = parseKey(c.key), r = c.range;
-    const cell = (v, kind, blue) => `<td style="border:1px solid #000;padding:7px 6px;text-align:center;font-weight:700;font-size:13px;background:#${blue ? EXP_BLUE : EXP_GRAY};">${typeof v === 'number' ? (kind === 'm' ? fmtMoney(v) : fmtHours(v)) : escapeHtml(String(v))}</td>`;
-    const head = h => `<tr>${h.map(x => `<th style="border:1px solid #000;padding:8px 6px;text-align:center;font-weight:800;font-size:14px;background:#${EXP_BLUE};">${escapeHtml(x)}</th>`).join('')}</tr>`;
-    const body = (rows, bl) => rows.map(row => `<tr style="page-break-inside:avoid;">${row.slice(0, bl.head.length).map((v, i) => cell(v, bl.kinds[i], i === 0)).join('')}</tr>`).join('');
-    const tables = exportBlocks(c).map(bl => `<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-top:18px;page-break-inside:auto;">${bl.onlyFoot ? '' : head(bl.head)}${body(bl.rows, bl)}${body(bl.foot, bl)}</table>`).join('');
-    return `<div style="font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;padding:6px;">
-        <div style="font-size:20px;font-weight:800;">A COBRAR EN ${monthName(month).toUpperCase()} ${year}</div>
-        <div style="font-size:12px;color:#666;margin-top:3px;">Extras del ${fmtDayMonth(r.startDate)} al ${fmtDayMonth(r.endDate)}${data.settings.name ? ' · ' + escapeHtml(data.settings.name) : ''}</div>
-        ${tables}
-        <p style="margin-top:20px;font-size:10px;color:#999;">Generado el ${new Date().toLocaleDateString('es-UY')} con Mis extras.</p></div>`;
+    const acc = lastThemeHex || '#3A5A8C', on = onColorFor(acc);
+    const E = escapeHtml;
+    const pend = c.hoursPending > 0 && c.rate ? r2((c.advance > 0 ? c.net : c.total) + c.extrasPending) : 0;
+    const pct = c.goal > 0 ? Math.max(0, Math.min(100, Math.round(c.hoursAll / c.goal * 100))) : 0;
+    const days = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+    const rows = c.list.map(e => {
+        const d = new Date(e.date + 'T12:00:00');
+        return `<div style="display:flex;align-items:center;padding:9px 4px;border-bottom:1px solid #eef0f3;page-break-inside:avoid;">
+            <span style="width:11px;height:11px;border-radius:50%;flex:none;background:${e.done ? '#2E9E5B' : '#fff'};border:2px solid ${e.done ? '#2E9E5B' : '#C3C9D3'};"></span>
+            <span style="width:92px;margin-left:12px;font-weight:800;font-size:14px;">${days[d.getDay()]} ${expDM(e.date)}</span>
+            <span style="flex:1;font-size:13px;color:#555;">${E(e.start)} – ${E(e.end)}</span>
+            <span style="font-weight:800;font-size:14px;width:60px;text-align:right;">${fmtHours(entryHours(e))} h</span>
+            <span style="width:92px;text-align:right;font-size:13px;color:${e.done ? '#1F7A45' : '#9AA1AD'};font-weight:700;">${c.rate ? fmtMoney(entryHours(e) * c.rate) : ''}</span></div>`;
+    }).join('') || `<div style="padding:18px 4px;color:#888;font-size:13px;">No hay extras en este período.</div>`;
+    const line = (a, b, strong) => `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:${strong ? 15 : 13}px;${strong ? 'font-weight:800;border-top:1px solid #dfe3ea;margin-top:4px;padding-top:9px;' : 'color:#444;'}"><span>${a}</span><span style="font-weight:800;color:#000;">${b}</span></div>`;
+    const money = [line('Sueldo base', fmtMoney(c.base)), line(`Extras hechas (${fmtHours(c.hoursDone)} h)`, fmtMoney(c.extrasWorked))];
+    if (c.defer > 0) money.push(line(`− ${fmtHours(c.defer)} h al mes que viene`, fmtMoney(-c.deferPay)));
+    if (c.carry > 0) money.push(line(`+ ${fmtHours(c.carry)} h del mes anterior`, fmtMoney(c.carryPay)));
+    if (c.night) money.push(line(`Nocturnas (${fmtHours(c.night)} h)`, fmtMoney(c.nightPay)));
+    if (c.weekend) money.push(line(`Fin de semana (${fmtHours(c.weekend)} h)`, fmtMoney(c.weekendPay)));
+    if (c.advance > 0) { money.push(line('Total', fmtMoney(c.total))); money.push(line('Adelanto', fmtMoney(-c.advance))); }
+    const card = (title, inner) => `<div style="flex:1;background:#F6F8FB;border-radius:14px;padding:14px 16px;"><div style="font-size:11px;font-weight:800;letter-spacing:.08em;color:#7A8394;margin-bottom:6px;">${title}</div>${inner}</div>`;
+    const hours = line('Hechas', `${fmtHours(c.hoursDone)} h`) + line('Por hacer', `${fmtHours(c.hoursPending)} h`) + line('Total', `${fmtHours(c.hoursAll)} h`, true)
+        + `<div style="margin-top:10px;height:9px;border-radius:5px;background:#E3E7EE;overflow:hidden;"><div style="width:${pct}%;height:100%;background:${acc};"></div></div>
+           <div style="font-size:11px;color:#7A8394;margin-top:5px;">Objetivo ${fmtHours(c.goal)} h · mínimo ${fmtHours(c.min)} h${c.remaining > 0 ? ` · faltan ${fmtHours(c.remaining)} h` : ' · ¡cumplido!'}</div>`;
+    return `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;background:#fff;padding:4px;">
+        <div style="background:${acc};color:${on};border-radius:18px;padding:22px 24px;">
+            <div style="font-size:12px;font-weight:800;letter-spacing:.1em;opacity:.85;">A COBRAR EN ${monthName(month).toUpperCase()} ${year}</div>
+            <div style="font-size:40px;font-weight:900;margin-top:6px;">${fmtMoney(c.advance > 0 ? c.net : c.total)}</div>
+            <div style="font-size:12px;margin-top:4px;opacity:.85;">${c.advance > 0 ? 'Total del mes menos el adelanto' : 'Total del mes'} · extras del ${fmtDayMonth(r.startDate)} al ${fmtDayMonth(r.endDate)}${data.settings.name ? ' · ' + E(data.settings.name) : ''}</div>
+            ${pend ? `<div style="margin-top:12px;display:inline-block;background:rgba(255,255,255,.22);border-radius:10px;padding:6px 12px;font-size:12px;font-weight:700;">Si hacés las ${fmtHours(c.hoursPending)} h que faltan: ${fmtMoney(pend)}</div>` : ''}
+        </div>
+        <div style="font-size:11px;font-weight:800;letter-spacing:.08em;color:#7A8394;margin:20px 4px 4px;">EXTRAS DEL PERÍODO</div>
+        ${rows}
+        <div style="display:flex;gap:12px;margin-top:20px;page-break-inside:avoid;">${card('RESUMEN', money.join(''))}${card('HORAS', hours)}</div>
+        <p style="margin-top:16px;font-size:10px;color:#a0a6b1;text-align:center;">● hecha &nbsp; ○ por hacer · Generado el ${new Date().toLocaleDateString('es-UY')} con Mis extras</p></div>`;
 }
 async function exportPdf() {
     const c = calc(periodKey), { year, month } = parseKey(periodKey);
