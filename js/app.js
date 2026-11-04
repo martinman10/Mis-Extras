@@ -975,45 +975,29 @@ async function downloadFile(filename, content, mime) {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 function exportCsv() {
-    const c = calc(periodKey), { year, month } = parseKey(periodKey);
-    const num = n => String(Math.round(n * 100) / 100).replace('.', ',');
-    const rows = [['Fecha', 'Desde', 'Hasta', 'Horas', 'Valor $', 'Hecha', 'Comentario']];
-    c.list.forEach(e => rows.push([e.date, e.start, e.end, num(entryHours(e)), num(entryHours(e) * c.rate), e.done ? 'Sí' : 'No', e.comment]));
-    rows.push([]);
-    rows.push(['Horas hechas', '', '', num(c.hoursDone), num(c.extrasWorked)]);
-    rows.push(['Horas por hacer', '', '', num(c.hoursPending), num(c.extrasPending)]);
-    rows.push(['Sueldo base', '', '', '', num(c.base)]);
-    rows.push(['Total del mes', '', '', '', num(c.total)]);
-    if (c.advance) rows.push(['Total − adelanto', '', '', '', num(c.net)]);
-    rows.push([]);
-    rows.push(['Gastos', '', '', '', '']);
-    c.expenses.forEach(x => rows.push([x.name, '', '', '', num(x.amount), x.paid ? 'Pagado' : '']));
-    rows.push(['Total gastos', '', '', '', num(c.expTotal)]);
-    rows.push(['Ingresos', '', '', '', '']);
-    c.incomes.forEach(x => rows.push([x.name, '', '', '', num(x.amount)]));
-    if (c.agAmount) rows.push(['Aguinaldo (automático)', '', '', '', num(c.agAmount)]);
-    rows.push(['Total ingresos', '', '', '', num(c.incTotal)]);
-    rows.push(['Me quedan', '', '', '', num(c.left)]);
+    const c = calc(periodKey), { year, month } = parseKey(periodKey), t = exportTable(c);
+    const num = n => String(n).replace('.', ',');
+    const rows = [[t.title], ['DIA', 'DESDE', 'HASTA', 'CANTIDAD', 'VALOR EN $', '¿LAS HICE?']];
+    t.rows.forEach(r => rows.push([r.dia, r.desde, r.hasta, num(r.cant), num(r.valor), r.hecha ? 'SÍ' : 'NO']));
+    rows.push(['TOTAL', '', '', num(t.totalHoras), num(t.totalValor), '']);
     const csv = '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
     downloadFile(`extras-${year}-${String(month + 1).padStart(2, '0')}.csv`, csv, 'text/csv;charset=utf-8');
 }
 // ============================================================
-//  EXPORTAR (Excel y PDF): mismo formato que la planilla — encabezado y primera columna celestes, celdas grises, bordes negros
+//  EXPORTAR (Excel y PDF): solo la planilla de extras, igual que la planilla original (celeste = títulos, gris = datos, rosa = horas, verde = plata)
 // ============================================================
-const EXP_BLUE = 'A7C4E4', EXP_GRAY = 'F3F3F3';
+const EXP_BLUE = 'A7C4E4', EXP_GRAY = 'F3F3F3', EXP_TITLE = '7EA6D9', EXP_PINK = 'F4CCCC', EXP_GREEN = 'B6D7A8';
+const EXP_ROWS = 18; // filas fijas de la planilla (las que sobran quedan vacías)
 function expDM(d) { return `${+d.slice(8)}/${+d.slice(5, 7)}`; }
 function r2(n) { return Math.round(n * 100) / 100; }
-// Bloque "Plata" (solo para la 2ª hoja del Excel): gastos, ingresos y cuánto queda
-function exportBlocks(c) {
-    const b = [];
-    if (c.expenses.length) b.push({ head: ['GASTOS', 'VALOR EN $', '¿ESTÁ PAGO?'], kinds: ['t', 'm', 't'],
-        rows: c.expenses.map(x => [x.name || 'Sin nombre', r2(x.amount), x.paid ? 'SÍ' : 'NO']),
-        foot: [['TOTAL', r2(c.expTotal), ''], ['DEBO PAGAR', r2(c.expPending), '']] });
-    const inc = c.incomes.map(x => [x.name || 'Sin nombre', r2(x.amount), x.received ? 'SÍ' : 'NO']);
-    if (c.agAmount) inc.push(['Aguinaldo (automático)', r2(c.agAmount), 'NO']);
-    if (inc.length) b.push({ head: ['INGRESOS', 'VALOR EN $', '¿ESTÁ?'], kinds: ['t', 'm', 't'], rows: inc, foot: [['TOTAL', r2(c.incTotal), '']] });
-    b.push({ head: ['ME QUEDAN', 'VALOR EN $'], kinds: ['t', 'm'], rows: [], foot: [['ME QUEDAN', r2(c.left)]], onlyFoot: true });
-    return b;
+// Lo único que llevan el Excel y el PDF: la planilla de extras (día, desde, hasta, cantidad, valor, ¿las hice?) y el total
+function exportTable(c) {
+    const { month } = parseKey(c.key);
+    return {
+        title: `A COBRAR EN ${monthName(month).toUpperCase()}`,
+        rows: c.list.map(e => ({ dia: expDM(e.date), desde: e.start, hasta: e.end, cant: r2(entryHours(e)), valor: r2(entryHours(e) * c.rate), hecha: !!e.done })),
+        totalHoras: r2(c.hoursAll), totalValor: r2(c.hoursAll * c.rate)
+    };
 }
 let exljsPromise = null;
 function loadExcelJs() {
@@ -1021,25 +1005,17 @@ function loadExcelJs() {
     if (!exljsPromise) exljsPromise = loadScript('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js').then(ok => { if (!ok) exljsPromise = null; return ok; });
     return exljsPromise;
 }
-// Barra de progreso hecha con texto: ████░░░░░░░░
-function barRich(done, goal) {
-    const N = 12, k = goal > 0 ? Math.max(0, Math.min(N, Math.round(done / goal * N))) : 0;
-    const rt = [];
-    if (k) rt.push({ text: '█'.repeat(k), font: { color: { argb: 'FF3A5A8C' }, size: 12 } });
-    if (N - k) rt.push({ text: '█'.repeat(N - k), font: { color: { argb: 'FFE5E7EB' }, size: 12 } });
-    return { richText: rt };
-}
-// Arma la hoja principal igual que la planilla: celeste = títulos, rosa = horas/cantidades, verde = plata
-function buildMainSheet(wb, c, year, month) {
+function buildSheet(wb, c) {
+    const t = exportTable(c), { year, month } = parseKey(c.key);
     const ws = wb.addWorksheet(`${monthName(month)} ${year}`.slice(0, 31), { views: [{ showGridLines: false }] });
-    ws.columns = [{ width: 18 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 14 }];
-    const thin = { style: 'thin', color: { argb: 'FF000000' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
+    ws.columns = [{ width: 13 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 17 }, { width: 14 }];
+    ws.pageSetup = { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+    const thin = { style: 'thin', color: { argb: 'FF595959' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
     const fill = rgb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + rgb } });
-    const money = '"$"#,##0.00', hrs = '0.##';
-    const T = '7EA6D9', B = EXP_BLUE, G = EXP_GRAY, P = 'F4CCCC', V = 'B6D7A8', V2 = '93C47D';
+    const money = '"$"#,##0.00';
     // cada celda: [valor, color de fondo, formato, columnas que ocupa]
     const addRow = (cells, h) => {
-        const row = ws.addRow([]); row.height = h || 22;
+        const row = ws.addRow([]); row.height = h || 21;
         let col = 1;
         cells.forEach(([val, rgb, fmt, span]) => {
             const n = span || 1;
@@ -1051,65 +1027,18 @@ function buildMainSheet(wb, c, year, month) {
             }
             const cell = row.getCell(col);
             cell.value = val;
-            if (val === '☑' || val === '☐') cell.font = { bold: true, size: 16 };
             if (fmt && typeof val === 'number') cell.numFmt = fmt;
+            if (val === '☑' || val === '☐') cell.font = { bold: true, size: 16 };
             if (n > 1) ws.mergeCells(row.number, col, row.number, col + n - 1);
             col += n;
         });
-        return row;
     };
-    const spacer = () => { const s = ws.addRow([]); s.height = 12; };
-    const rate = c.rate || 0;
-
-    addRow([[`A COBRAR EN ${monthName(month).toUpperCase()}`, T, null, 6]], 24);
-    addRow([['DIA', B], ['DESDE', B], ['HASTA', B], ['CANTIDAD', B], ['VALOR EN $', B], ['¿LAS HICE?', B]]);
-    c.list.forEach(e => {
-        const h = entryHours(e);
-        addRow([[expDM(e.date), B], [e.start, G], [e.end, G], [r2(h), G, hrs], [r2(h * rate), G, money], [e.done ? '☑' : '☐', e.done ? B : G]]);
-    });
-    for (let i = c.list.length; i < 18; i++) addRow([['', B], ['', G], ['', G], ['', G], ['', G], ['☐', G]]); // filas libres como en la planilla
-    addRow([['TOTAL', B], ['', B, null, 2], [r2(c.hoursAll), P, hrs], [r2(c.hoursAll * rate), V, money, 2]]);
-    spacer();
-
-    // Objetivo y mínimo: horas, plata, cuántas faltan y barra de progreso
-    const goalRow = (label, goal, falta) => {
-        const row = addRow([[label, B], [r2(goal), P, hrs], [r2(goal * rate), V, money], [r2(falta), P, hrs], ['PROGRESO', B], ['', 'FFFFFF']]);
-        const cell = row.getCell(6); cell.value = barRich(c.hoursAll, goal);
-        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-    };
-    goalRow('OBJETIVO', c.goal, c.remaining);
-    spacer();
-    goalRow('MINIMO', c.min, c.remainingMin);
-    spacer();
-
-    addRow([['TOTAL DEL MES', B], [r2(c.total), V, money]]);
-    spacer();
-    addRow([['NOCTURNAS', B], [r2(c.night), P, hrs], [r2(c.nightPay), V, money]]);
-    spacer();
-    addRow([['FINDE', B], [r2(c.weekend), P, hrs], [r2(c.weekendPay), V, money]]);
-    spacer();
-    addRow([['DEBO', B], [r2(c.expPending), P, '#,##0'], ['ME QUEDAN', B], [r2(c.left), V2, money, 2]]);
-    spacer();
-    addRow([['DIAS', B], ['DE 3HS', B], [Math.ceil(c.remaining / 3), P, '0'], ['DE 6HS', B], [Math.ceil(c.remaining / 6), P, '0']]);
-    if (c.advance > 0 && !c.cobroReal) { spacer(); addRow([['TOTAL - ADELANTO', B], [r2(c.net), V, money]]); }
-    return ws;
-}
-// 2ª hoja: gastos, ingresos y lo que queda
-function buildMoneySheet(wb, c) {
-    const ws = wb.addWorksheet('Plata', { views: [{ showGridLines: false }] });
-    ws.columns = [{ width: 30 }, { width: 15 }, { width: 15 }];
-    const thin = { style: 'thin', color: { argb: 'FF000000' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
-    const fill = rgb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + rgb } });
-    const style = (cell, blue, kind) => {
-        cell.fill = fill(blue ? EXP_BLUE : EXP_GRAY); cell.border = border; cell.font = { bold: true, size: 12 };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        if (kind === 'm' && typeof cell.value === 'number') cell.numFmt = '"$" #,##0.00';
-    };
-    exportBlocks(c).forEach(bl => {
-        if (!bl.onlyFoot) { const hr = ws.addRow(bl.head); hr.height = 22; hr.eachCell(cell => style(cell, true, 't')); }
-        [...bl.rows, ...bl.foot].forEach(row => { const rr = ws.addRow(row); rr.height = 20; rr.eachCell({ includeEmpty: true }, (cell, i) => { if (i <= bl.head.length) style(cell, i === 1, bl.kinds[i - 1]); }); });
-        ws.addRow([]);
-    });
+    const B = EXP_BLUE, G = EXP_GRAY;
+    addRow([[t.title, EXP_TITLE, null, 6]], 25);
+    addRow([['DIA', B], ['DESDE', B], ['HASTA', B], ['CANTIDAD', B], ['VALOR EN $', B], ['¿LAS HICE?', B]], 22);
+    t.rows.forEach(r => addRow([[r.dia, B], [r.desde, G], [r.hasta, G], [r.cant, G], [r.valor, G, money], [r.hecha ? '☑' : '☐', r.hecha ? B : G]]));
+    for (let i = t.rows.length; i < EXP_ROWS; i++) addRow([['', B], ['', G], ['', G], ['', G], ['', G], ['☐', G]]);
+    addRow([['TOTAL', B], ['', B, null, 2], [t.totalHoras, EXP_PINK], [t.totalValor, EXP_GREEN, money, 2]], 22);
     return ws;
 }
 async function exportXlsx() {
@@ -1117,8 +1046,7 @@ async function exportXlsx() {
     if (!(await loadExcelJs())) { showToast('Sin conexión: se baja en formato simple (CSV)'); exportCsv(); return; }
     try {
         const wb = new window.ExcelJS.Workbook();
-        buildMainSheet(wb, c, year, month);
-        buildMoneySheet(wb, c);
+        buildSheet(wb, c);
         const buf = await wb.xlsx.writeBuffer();
         const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         await downloadFile(`extras-${year}-${String(month + 1).padStart(2, '0')}.xlsx`, new Blob([buf], { type: mime }), mime);
@@ -1292,43 +1220,24 @@ async function loadHtml2pdf() {
     return h2pPromise;
 }
 function pdfHtml(c) {
-    const { year, month } = parseKey(c.key), r = c.range;
-    const acc = lastThemeHex || '#3A5A8C', on = onColorFor(acc);
-    const E = escapeHtml;
-    const pend = c.hoursPending > 0 && c.rate ? r2((c.advance > 0 ? c.net : c.total) + c.extrasPending) : 0;
-    const pct = c.goal > 0 ? Math.max(0, Math.min(100, Math.round(c.hoursAll / c.goal * 100))) : 0;
-    const days = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
-    const rows = c.list.map(e => {
-        const d = new Date(e.date + 'T12:00:00');
-        return `<div style="display:flex;align-items:center;padding:9px 4px;border-bottom:1px solid #eef0f3;page-break-inside:avoid;">
-            <span style="width:11px;height:11px;border-radius:50%;flex:none;background:${e.done ? '#2E9E5B' : '#fff'};border:2px solid ${e.done ? '#2E9E5B' : '#C3C9D3'};"></span>
-            <span style="width:92px;margin-left:12px;font-weight:800;font-size:14px;">${days[d.getDay()]} ${expDM(e.date)}</span>
-            <span style="flex:1;font-size:13px;color:#555;">${E(e.start)} – ${E(e.end)}</span>
-            <span style="font-weight:800;font-size:14px;width:60px;text-align:right;">${fmtHours(entryHours(e))} h</span>
-            <span style="width:92px;text-align:right;font-size:13px;color:${e.done ? '#1F7A45' : '#9AA1AD'};font-weight:700;">${c.rate ? fmtMoney(entryHours(e) * c.rate) : ''}</span></div>`;
-    }).join('') || `<div style="padding:18px 4px;color:#888;font-size:13px;">No hay extras en este período.</div>`;
-    const line = (a, b, strong) => `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:${strong ? 15 : 13}px;${strong ? 'font-weight:800;border-top:1px solid #dfe3ea;margin-top:4px;padding-top:9px;' : 'color:#444;'}"><span>${a}</span><span style="font-weight:800;color:#000;">${b}</span></div>`;
-    const money = [line('Sueldo base', fmtMoney(c.base)), line(`Extras hechas (${fmtHours(c.hoursDone)} h)`, fmtMoney(c.extrasWorked))];
-    if (c.defer > 0) money.push(line(`− ${fmtHours(c.defer)} h al mes que viene`, fmtMoney(-c.deferPay)));
-    if (c.carry > 0) money.push(line(`+ ${fmtHours(c.carry)} h del mes anterior`, fmtMoney(c.carryPay)));
-    if (c.night) money.push(line(`Nocturnas (${fmtHours(c.night)} h)`, fmtMoney(c.nightPay)));
-    if (c.weekend) money.push(line(`Fin de semana (${fmtHours(c.weekend)} h)`, fmtMoney(c.weekendPay)));
-    if (c.advance > 0 && !c.cobroReal) { money.push(line('Total', fmtMoney(c.total))); money.push(line('Adelanto', fmtMoney(-c.advance))); }
-    const card = (title, inner) => `<div style="flex:1;background:#F6F8FB;border-radius:14px;padding:14px 16px;"><div style="font-size:11px;font-weight:800;letter-spacing:.08em;color:#7A8394;margin-bottom:6px;">${title}</div>${inner}</div>`;
-    const hours = line('Hechas', `${fmtHours(c.hoursDone)} h`) + line('Por hacer', `${fmtHours(c.hoursPending)} h`) + line('Total', `${fmtHours(c.hoursAll)} h`, true)
-        + `<div style="margin-top:10px;height:9px;border-radius:5px;background:#E3E7EE;overflow:hidden;"><div style="width:${pct}%;height:100%;background:${acc};"></div></div>
-           <div style="font-size:11px;color:#7A8394;margin-top:5px;">Objetivo ${fmtHours(c.goal)} h · mínimo ${fmtHours(c.min)} h${c.remaining > 0 ? ` · faltan ${fmtHours(c.remaining)} h` : ' · ¡cumplido!'}</div>`;
-    return `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;background:#fff;padding:4px;">
-        <div style="background:${acc};color:${on};border-radius:18px;padding:22px 24px;">
-            <div style="font-size:12px;font-weight:800;letter-spacing:.1em;opacity:.85;">A COBRAR EN ${monthName(month).toUpperCase()} ${year}</div>
-            <div style="font-size:40px;font-weight:900;margin-top:6px;">${fmtMoney(c.advance > 0 ? c.net : c.total)}</div>
-            <div style="font-size:12px;margin-top:4px;opacity:.85;">${c.advance > 0 ? 'Total del mes menos el adelanto' : 'Total del mes'} · extras del ${fmtDayMonth(r.startDate)} al ${fmtDayMonth(r.endDate)}${data.settings.name ? ' · ' + E(data.settings.name) : ''}</div>
-            ${pend ? `<div style="margin-top:12px;display:inline-block;background:rgba(255,255,255,.22);border-radius:10px;padding:6px 12px;font-size:12px;font-weight:700;">Si hacés las ${fmtHours(c.hoursPending)} h que faltan: ${fmtMoney(pend)}</div>` : ''}
-        </div>
-        <div style="font-size:11px;font-weight:800;letter-spacing:.08em;color:#7A8394;margin:20px 4px 4px;">EXTRAS DEL PERÍODO</div>
-        ${rows}
-        <div style="display:flex;gap:12px;margin-top:20px;page-break-inside:avoid;">${card('RESUMEN', money.join(''))}${card('HORAS', hours)}</div>
-        <p style="margin-top:16px;font-size:10px;color:#a0a6b1;text-align:center;">● hecha &nbsp; ○ por hacer · Generado el ${new Date().toLocaleDateString('es-UY')} con Mis extras</p></div>`;
+    const t = exportTable(c), E = escapeHtml;
+    const bd = 'border:1px solid #595959;';
+    const pm = n => '$' + n.toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const td = (inner, bg, extra) => `<td style="${bd}background:#${bg};text-align:center;vertical-align:middle;height:29px;padding:0 4px;font-weight:700;font-size:14px;${extra || ''}">${inner}</td>`;
+    const box = on => on
+        ? `<div style="width:18px;height:18px;margin:0 auto;border-radius:3px;background:#3F6FB5;position:relative;"><div style="position:absolute;left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);"></div></div>`
+        : `<div style="width:18px;height:18px;margin:0 auto;border-radius:3px;border:2px solid #777;background:#fff;box-sizing:border-box;"></div>`;
+    const head = ['DIA', 'DESDE', 'HASTA', 'CANTIDAD', 'VALOR EN $', '¿LAS HICE?'].map(h => td(h, EXP_BLUE, 'height:30px;')).join('');
+    const rows = t.rows.map(r => `<tr style="page-break-inside:avoid;">${td(r.dia, EXP_BLUE)}${td(E(r.desde), EXP_GRAY)}${td(E(r.hasta), EXP_GRAY)}${td(fmtHours(r.cant), EXP_GRAY)}${td(pm(r.valor), EXP_GRAY)}${td(box(r.hecha), r.hecha ? EXP_BLUE : EXP_GRAY)}</tr>`).join('');
+    let blanks = '';
+    for (let i = t.rows.length; i < EXP_ROWS; i++) blanks += `<tr style="page-break-inside:avoid;">${td('', EXP_BLUE)}${td('', EXP_GRAY)}${td('', EXP_GRAY)}${td('', EXP_GRAY)}${td('', EXP_GRAY)}${td(box(false), EXP_GRAY)}</tr>`;
+    const total = `<tr style="page-break-inside:avoid;">${td('TOTAL', EXP_BLUE)}<td colspan="2" style="${bd}background:#${EXP_BLUE};"></td>${td(fmtHours(t.totalHoras), EXP_PINK)}<td colspan="2" style="${bd}background:#${EXP_GREEN};text-align:center;vertical-align:middle;height:29px;font-weight:700;font-size:14px;">${pm(t.totalValor)}</td></tr>`;
+    return `<div style="font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;">
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+            <colgroup><col style="width:14%"><col style="width:16%"><col style="width:16%"><col style="width:17%"><col style="width:21%"><col style="width:16%"></colgroup>
+            <tr><td colspan="6" style="${bd}background:#${EXP_TITLE};text-align:center;vertical-align:middle;height:34px;font-weight:700;font-size:20px;">${E(t.title)}</td></tr>
+            <tr>${head}</tr>${rows}${blanks}${total}
+        </table></div>`;
 }
 async function exportPdf() {
     const c = calc(periodKey), { year, month } = parseKey(periodKey);
