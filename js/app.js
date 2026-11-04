@@ -290,6 +290,7 @@ const AGUINALDO_AJUSTE = 1.15;
 const AGUINALDO_DUE = { 5: { day: 30, text: '30 de junio' }, 11: { day: 20, text: '20 de diciembre' } };
 function periodTotal(key) {
     const p = getPeriod(key), s = data.settings, r = periodRange(key);
+    if (p.cobroReal > 0) return p.cobroReal; // lo que realmente cobró manda
     const eff = f => effField(p, f, s);
     const hDone = sumBy(data.entries.filter(e => e.done && e.date >= r.start && e.date <= r.end), entryHours);
     return eff('base') + hDone * eff('rate') + (p.night || 0) * eff('nightRate') + (p.weekend || 0) * eff('weekendRate');
@@ -328,8 +329,10 @@ function calc(key) {
     const extrasPending = (hoursAll - hoursDone) * rate;
     const night = p.night || 0, weekend = p.weekend || 0;
     const nightPay = night * eff('nightRate'), weekendPay = weekend * eff('weekendRate');
-    const total = base + extras + nightPay + weekendPay;
-    const devol = p.devol || 0, cobroReal = 0, cobro = total + devol; // sueldo = base + extras pagas (+ nocturnas/finde)
+    const totalCalc = base + extras + nightPay + weekendPay; // lo que calcula la app
+    const devol = p.devol || 0, cobroReal = p.cobroReal > 0 ? p.cobroReal : 0; // lo que realmente cobró (si lo cargó)
+    const total = cobroReal || totalCalc;
+    const cobro = cobroReal || (total + devol); // sueldo = base + extras pagas (+ nocturnas/finde)
     const goal = p.goal != null ? p.goal : s.goal;
     const min = p.min != null ? p.min : s.min;
     const expenses = p.expenses || [], incomes = p.incomes || [];
@@ -338,9 +341,9 @@ function calc(key) {
     const advance = sumBy(expenses.filter(x => /adelanto/i.test(x.name)), x => x.amount);
     return {
         key, range: r, list, hoursAll, hoursDone, hoursPending: hoursAll - hoursDone,
-        rate, base, extras, extrasWorked, defer, carry, deferPay, carryPay, extrasPending, night, weekend, nightPay, weekendPay, total, cobro, cobroReal, devol,
+        rate, base, extras, extrasWorked, defer, carry, deferPay, carryPay, extrasPending, night, weekend, nightPay, weekendPay, total, totalCalc, cobro, cobroReal, devol,
         goal, min, remaining: Math.max(0, goal - hoursAll), remainingMin: Math.max(0, min - hoursAll),
-        expenses, incomes, expTotal, incTotal, ag, agAmount, advance, net: total - advance,
+        expenses, incomes, expTotal, incTotal, ag, agAmount, advance, net: cobroReal ? total : total - advance,
         left: cobro + incTotal - expTotal, salaryReceived: !!p.salaryReceived,
         haveNow: (p.salaryReceived ? cobro : 0) + sumBy(incomes.filter(x => x.received), x => x.amount) - sumBy(expenses.filter(x => x.paid), x => x.amount),
         expPending: sumBy(expenses.filter(x => !x.paid), x => x.amount)
@@ -539,14 +542,15 @@ function renderSummary() {
     if (c.carry > 0) lines += `<div class="hero-line"><span>+ ${fmtHours(c.carry)} h del período anterior</span><b>+ ${fmtMoney(c.carryPay)}</b></div>`;
     if (c.night) lines += `<div class="hero-line"><span>Nocturnas (${fmtHours(c.night)} h)</span><b>${fmtMoney(c.nightPay)}</b></div>`;
     if (c.weekend) lines += `<div class="hero-line"><span>Fin de semana (${fmtHours(c.weekend)} h)</span><b>${fmtMoney(c.weekendPay)}</b></div>`;
-    if (c.advance > 0) lines += `<div class="hero-line"><span>Subtotal antes del adelanto</span><b>${fmtMoney(c.total)}</b></div><div class="hero-line strong"><span>− Adelanto que ya cobraste</span><b>− ${fmtMoney(c.advance)}</b></div>`;
+    if (c.cobroReal) lines += `<div class="hero-line"><span>Cálculo de la app</span><b>${fmtMoney(c.totalCalc)}</b></div><div class="hero-line strong"><span>Ajuste al cobro real</span><b>${fmtMoney(c.cobroReal - c.totalCalc)}</b></div>`;
+    else if (c.advance > 0) lines += `<div class="hero-line"><span>Subtotal antes del adelanto</span><b>${fmtMoney(c.total)}</b></div><div class="hero-line strong"><span>− Adelanto que ya cobraste</span><b>− ${fmtMoney(c.advance)}</b></div>`;
     // Lo que falta por hacer NO suma en el total: se muestra aparte, como proyección
     const proj = (c.hoursPending > 0 && c.rate)
-        ? `<div class="hero-proj"><span>Si hacés las ${fmtHours(c.hoursPending)} h que faltan</span><b>${fmtMoney((c.advance > 0 ? c.net : c.total) + c.extrasPending)}</b></div>
+        ? `<div class="hero-proj"><span>Si hacés las ${fmtHours(c.hoursPending)} h que faltan</span><b>${fmtMoney((c.advance > 0 && !c.cobroReal ? c.net : c.total) + c.extrasPending)}</b></div>
            <div class="hero-proj-sub">Las pendientes no suman hasta que las marques como hechas.</div>` : '';
     const hero = `<div class="hero-card">
-        <div class="hero-label">${c.advance > 0 ? 'Total del mes · solo hechas, sin el adelanto' : 'Total del mes · solo extras hechas'}</div>
-        <div class="hero-amount">${fmtMoney(c.advance > 0 ? c.net : c.total)}</div>
+        <div class="hero-label">${c.cobroReal ? 'Lo que cobraste (monto real que cargaste)' : c.advance > 0 ? 'Total del mes · solo hechas, sin el adelanto' : 'Total del mes · solo extras hechas'}</div>
+        <div class="hero-amount">${fmtMoney(c.advance > 0 && !c.cobroReal ? c.net : c.total)}</div>
         <div class="hero-lines">${lines}</div>
         ${proj}
         ${noValues ? `<div class="hero-hint"><i class="fas fa-circle-info"></i> Cargá tu valor hora y sueldo base en Ajustes (tocá tu perfil, arriba a la izquierda).</div>` : ''}
@@ -1087,7 +1091,7 @@ function buildMainSheet(wb, c, year, month) {
     addRow([['DEBO', B], [r2(c.expPending), P, '#,##0'], ['ME QUEDAN', B], [r2(c.left), V2, money, 2]]);
     spacer();
     addRow([['DIAS', B], ['DE 3HS', B], [Math.ceil(c.remaining / 3), P, '0'], ['DE 6HS', B], [Math.ceil(c.remaining / 6), P, '0']]);
-    if (c.advance > 0) { spacer(); addRow([['TOTAL - ADELANTO', B], [r2(c.net), V, money]]); }
+    if (c.advance > 0 && !c.cobroReal) { spacer(); addRow([['TOTAL - ADELANTO', B], [r2(c.net), V, money]]); }
     return ws;
 }
 // 2ª hoja: gastos, ingresos y lo que queda
@@ -1309,7 +1313,7 @@ function pdfHtml(c) {
     if (c.carry > 0) money.push(line(`+ ${fmtHours(c.carry)} h del mes anterior`, fmtMoney(c.carryPay)));
     if (c.night) money.push(line(`Nocturnas (${fmtHours(c.night)} h)`, fmtMoney(c.nightPay)));
     if (c.weekend) money.push(line(`Fin de semana (${fmtHours(c.weekend)} h)`, fmtMoney(c.weekendPay)));
-    if (c.advance > 0) { money.push(line('Total', fmtMoney(c.total))); money.push(line('Adelanto', fmtMoney(-c.advance))); }
+    if (c.advance > 0 && !c.cobroReal) { money.push(line('Total', fmtMoney(c.total))); money.push(line('Adelanto', fmtMoney(-c.advance))); }
     const card = (title, inner) => `<div style="flex:1;background:#F6F8FB;border-radius:14px;padding:14px 16px;"><div style="font-size:11px;font-weight:800;letter-spacing:.08em;color:#7A8394;margin-bottom:6px;">${title}</div>${inner}</div>`;
     const hours = line('Hechas', `${fmtHours(c.hoursDone)} h`) + line('Por hacer', `${fmtHours(c.hoursPending)} h`) + line('Total', `${fmtHours(c.hoursAll)} h`, true)
         + `<div style="margin-top:10px;height:9px;border-radius:5px;background:#E3E7EE;overflow:hidden;"><div style="width:${pct}%;height:100%;background:${acc};"></div></div>
