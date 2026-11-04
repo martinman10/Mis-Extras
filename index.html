@@ -343,10 +343,6 @@
             </div>
         </div>
         <div class="form-row">
-            <div class="form-group" style="display:none;">
-                <label for="perCobro">Cobro real ($)</label>
-                <input type="text" inputmode="decimal" id="perCobro" placeholder="Vacío = se calcula" />
-            </div>
             <div class="form-group">
                 <label for="perDevol">Devoluciones ($)</label>
                 <input type="text" inputmode="decimal" id="perDevol" placeholder="0" />
@@ -357,8 +353,9 @@
             <input type="text" inputmode="decimal" id="perDefer" placeholder="Ej: 4,5" />
         </div>
         <div class="form-group">
-            <label for="perHaberes">Haberes del recibo ($, bruto) <span class="label-opt">(para el aguinaldo)</span></label>
-            <input type="text" inputmode="decimal" id="perHaberes" placeholder="Ej: 48591,13" />
+            <label for="perCobro">Lo que cobré realmente ($)</label>
+            <input type="text" inputmode="decimal" id="perCobro" placeholder="Vacío = lo calcula la app" />
+            <p class="field-hint">Si lo cargás, este monto reemplaza el cálculo de la app (en el Resumen, en Plata y en el aguinaldo).</p>
         </div>
         <div class="modal-actions">
             <button class="btn-secondary" id="periodCancelBtn">Cancelar</button>
