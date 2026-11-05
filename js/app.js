@@ -1,6 +1,6 @@
 // ============================================================
 //  HORAX · Mis extras
-//  Versión personal (una sola persona). Los datos se guardan en este dispositivo.
+//  Cada cuenta de Google ve solo lo suyo. Los datos se guardan en este dispositivo (separados por cuenta) y, si entrás con Google, también en la nube.
 // ============================================================
 const STORAGE_KEY = 'hxyo_data_v1';
 const MODE_KEY = 'hxyo_mode';
@@ -10,10 +10,11 @@ const CIERRE_DIA = 25; // el período cierra el 25: va del 26 del mes anterior a
 
 const DEFAULT_SETTINGS = {
     name: '', theme: '#1E5AA8',
-    rate: 0,        // valor de cada hora extra
-    base: 0,        // sueldo base
-    nightRate: 0,   // valor de cada hora nocturna
-    weekendRate: 0, // valor de cada hora de fin de semana
+    // Valores de la empresa: cada persona nueva arranca con estos y los puede cambiar en Ajustes.
+    rate: 342.7161, // valor de cada hora extra
+    base: 30842,    // sueldo base
+    nightRate: 35.99, // valor de cada hora nocturna
+    weekendRate: 41.69, // valor de cada hora de fin de semana
     goal: 40,       // objetivo de horas por período
     min: 30,        // mínimo de horas por período
     workStart: ''   // 'AAAA-MM': primer mes de cobro (el aguinaldo no cuenta meses anteriores)
@@ -206,6 +207,13 @@ function showConfirm({ title = '¿Estás seguro?', message = '', okText = 'Confi
 //           periods: { 'AAAA-MM': { goal, min, night, weekend, rate, base, nightRate, weekendRate,
 //                                    expenses: [{id,name,amount,paid}], incomes: [{id,name,amount}] } } }
 // ============================================================
+// Cada cuenta de Google guarda lo suyo en claves propias de este celu (…_<uid>). Sin cuenta se usa la clave simple.
+const ACTIVE_UID_KEY = 'hxyo_active_uid';
+let activeUid = ''; try { activeUid = localStorage.getItem(ACTIVE_UID_KEY) || ''; } catch (_) {}
+const nsKey = (base, uid) => (uid === undefined ? activeUid : uid) ? `${base}_${uid === undefined ? activeUid : uid}` : base;
+const dataKey = () => nsKey(STORAGE_KEY);
+const tsKey = () => nsKey('hxyo_cloud_ts');         // cuándo cambió por última vez lo de este dispositivo
+const syncedKey = () => nsKey('hxyo_cloud_synced'); // versión de la nube con la que quedó igual la última vez
 let data = loadData();
 
 function emptyData() { return { settings: { ...DEFAULT_SETTINGS }, entries: [], periods: {}, people: [] }; }
@@ -232,13 +240,13 @@ function normalizeData(raw) {
 }
 function loadData() {
     try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = localStorage.getItem(dataKey());
         if (raw) return normalizeData(JSON.parse(raw));
     } catch (e) { console.error('No se pudo leer lo guardado', e); }
     return emptyData();
 }
 function saveData() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); localStorage.setItem('hxyo_cloud_ts', String(Date.now())); }
+    try { localStorage.setItem(dataKey(), JSON.stringify(data)); localStorage.setItem(tsKey(), String(Date.now())); }
     catch (e) { console.error(e); showToast('No se pudo guardar en este dispositivo'); }
     cloudQueuePush();
 }
@@ -686,9 +694,9 @@ function renderMoney() {
         const here = !!c.ag;
         const manualAmt = here && ag.manual ? sumBy(c.incomes.filter(x => /aguinaldo/i.test(x.name)), x => x.amount) : null;
         const note = here && ag.manual ? `Se usa el que cargaste. La app estima ${fmtMoney(ag.amount)} (diferencia ${fmtMoney((manualAmt || 0) - ag.amount)}).`
-            : `Suma de los 6 cobros de ${fmtMes(ag.keys[0])} a ${fmtMes(ag.keys[5])} (${fmtMoney(ag.sum)}) ÷ 12, más 15% porque el aguinaldo se cobra con menos descuentos. Es una estimación con lo que tenés cargado.`;
+            : `Suma de los 6 cobros de ${fmtMes(ag.keys[0])} a ${fmtMes(ag.keys[5])} (${fmtMoney(ag.sum)}) ÷ 12, más 15% porque el aguinaldo se cobra con menos descuentos. Es un valor estimado con lo que tenés cargado: el real puede ser distinto.`;
         return `<div class="card">
-            <div class="card-head"><h3>${here ? 'Aguinaldo' : 'Próximo aguinaldo'}</h3><span class="card-aside">${ag.dueText}</span></div>
+            <div class="card-head"><h3>${here ? 'Aguinaldo' : 'Próximo aguinaldo'} <small style="font-weight:600;color:var(--text-light);">(estimado)</small></h3><span class="card-aside">${ag.dueText}</span></div>
             <div class="fin-big">${fmtMoney(manualAmt != null ? manualAmt : ag.amount)}</div>
             <div class="fin-eq">${note}</div>
             <div class="fin-sub"><span>Fecha límite</span><span>${fmtDayMonth(ag.dueDate)} ${ag.dueDate.getFullYear()}</span></div>
@@ -706,7 +714,7 @@ function renderMoney() {
 
     const inc = `<div class="card">
         <div class="card-head"><h3>Ingresos</h3><button class="mini-btn primary" data-act="item-add" data-kind="inc"><i class="fas fa-plus"></i> Agregar</button></div>
-        ${c.agAmount ? `<div class="fin-item"><span class="fin-name">Aguinaldo <small>(automático)</small></span><span class="fin-amt">${fmtMoney(c.agAmount)}</span></div>` : ''}
+        ${c.agAmount ? `<div class="fin-item"><span class="fin-name">Aguinaldo <small>(estimado)</small></span><span class="fin-amt">${fmtMoney(c.agAmount)}</span></div>` : ''}
         ${c.incomes.length ? c.incomes.filter(x => x.amount > 0).map(x => item(x, 'inc')).join('') + (c.incomes.some(x => !(x.amount > 0)) ? `<div class="fin-actions">${c.incomes.filter(x => !(x.amount > 0)).map(x => `<button class="mini-btn" data-act="item-edit" data-kind="inc" data-id="${x.id}">${escapeHtml(x.name || 'Sin nombre')} · $0</button>`).join('')}</div>` : '') : (c.agAmount ? '' : `<div class="fin-empty">Sin otros ingresos en este período.</div>`)}
         ${c.incomes.length || c.agAmount ? `<div class="fin-total"><span>Total ingresos</span><span>${fmtMoney(c.incTotal)}</span></div>` : ''}
     </div>`;
@@ -1120,7 +1128,6 @@ function openSettings() {
     $('setRate').value = numToInput(s.rate); $('setBase').value = numToInput(s.base);
     $('setNight').value = numToInput(s.nightRate); $('setWeekend').value = numToInput(s.weekendRate);
     $('setGoal').value = numToInput(s.goal); $('setMin').value = numToInput(s.min);
-    $('setWorkStart').value = s.workStart || '';
     pendingTheme = s.theme || THEME_DEFAULT;
     renderThemeSwatches(); renderModeSeg(); updateSettingsAvatar(); renderCloud(); refreshPushUi();
     $('settingsError').style.display = 'none';
@@ -1175,7 +1182,6 @@ function saveSettings() {
     });
     Object.assign(s, next);
     s.name = $('setName').value.trim();
-    s.workStart = /^\d{4}-\d{2}$/.test($('setWorkStart').value) ? $('setWorkStart').value : '';
     s.theme = pendingTheme;
     saveData();
     applyProfileToHeader();
@@ -1257,17 +1263,239 @@ async function exportPdf() {
 }
 
 // ============================================================
+//  CARGAR RECIBOS ANTERIORES (PDF o foto)
+//  Lee el "Total neto" de cada recibo de sueldo y lo guarda como "lo que cobré realmente" del mes en que se cobra.
+//  Un recibo de "Octubre 2026" se cobra en noviembre → período 2026-11. Los meses que ya tienen un cobro cargado no se tocan.
+//  Las licencias (salario vacacional) no se cargan: no cuentan para el aguinaldo.
+// ============================================================
+const REC_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const REC_MES_RE = /(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\s*,?\s*[-–]?\s*(20\d\d)/gi;
+function recMesIdx(name) { const n = name.toLowerCase(); return n === 'setiembre' ? 8 : REC_MESES.indexOf(n); }
+function recNum(str) { // '34.609,40' o '34,609.40' → 34609.4
+    const s = String(str).replace(/[^\d.,]/g, '');
+    const m = s.match(/^(.*?)[.,](\d{2})$/);
+    return m ? Number(m[1].replace(/[.,]/g, '') + '.' + m[2]) : Number(s.replace(/[.,]/g, ''));
+}
+function recKey(mi, y) { return shiftKey(`${y}-${String(mi + 1).padStart(2, '0')}`, 1); }
+function recTipo(t) {
+    const x = String(t || '').toLowerCase();
+    if (!x) return 'mensualidad';
+    if (/licen|vacac/.test(x)) return 'licencia';
+    if (/aguin/.test(x)) return 'aguinaldo';
+    if (/mensual/.test(x)) return 'mensualidad';
+    return 'otro';
+}
+function parseReceiptText(raw) {
+    const t = String(raw || '').replace(/ /g, ' ');
+    const out = [];
+    const isReceipt = /total\s+neto/i.test(t) || (/haberes/i.test(t) && /descuentos/i.test(t));
+    const amountOk = n => Number.isFinite(n) && n >= 1000 && n <= 2000000;
+    if (isReceipt) {
+        REC_MES_RE.lastIndex = 0;
+        const mm = REC_MES_RE.exec(t);
+        let key = null, mi = null, y = null;
+        if (mm) { mi = recMesIdx(mm[1]); y = +mm[2]; key = recKey(mi, y); }
+        else { const pd = t.match(/Fecha\s+de\s+Pago\s*:?\s*(\d{1,2})\/(\d{1,2})\/(20\d\d)/i); if (pd) { key = `${pd[3]}-${pd[2].padStart(2, '0')}`; const k0 = shiftKey(key, -1), q = parseKey(k0); mi = q.month; y = q.year; } }
+        const tp = t.match(/Liquidaci[oó]n\s*:\s*([A-Za-zÁÉÍÓÚáéíóúñ]+)/i);
+        let amount = NaN;
+        const tn = t.match(/Total\s+neto\s*:?\s*\$?\s*(\d[\d.,]*\d)/i);
+        if (tn) amount = recNum(tn[1]);
+        if (!amountOk(amount)) {
+            const h = t.match(/Total\s+de\s+Haberes\s*:?\s*\$?\s*(\d[\d.,]*\d)/i), d = t.match(/Total\s+de\s+Descuentos\s*:?\s*\$?\s*(\d[\d.,]*\d)/i);
+            if (h && d) amount = Math.round((recNum(h[1]) - recNum(d[1])) * 100) / 100;
+        }
+        if (!key) out.push({ bad: true, reason: 'No encontré de qué mes es el recibo' });
+        else if (!amountOk(amount)) out.push({ bad: true, mi, y, key, reason: 'No pude leer el monto' });
+        else out.push({ mi, y, key, tipo: recTipo(tp && tp[1]), amount });
+        return out;
+    }
+    // Lista de recibos (captura de la app de la empresa): "Octubre, 2026 · MENSUALIDAD · LÍQUIDO $ 34.609,40"
+    const heads = []; let m;
+    REC_MES_RE.lastIndex = 0;
+    while ((m = REC_MES_RE.exec(t))) heads.push({ at: m.index, mi: recMesIdx(m[1]), y: +m[2] });
+    heads.forEach((h, k) => {
+        const seg = t.slice(h.at, k + 1 < heads.length ? heads[k + 1].at : t.length);
+        const am = seg.match(/L[IÍl1]QU[IÍl1]DO[^\d\n]{0,8}(\d[\d.,]*\d)/i);
+        const tp = seg.match(/mensualidad|licencia|aguinaldo|vacacional/i);
+        const key = recKey(h.mi, h.y), amount = am ? recNum(am[1]) : NaN;
+        if (!amountOk(amount)) out.push({ bad: true, mi: h.mi, y: h.y, key, reason: 'No pude leer el monto' });
+        else out.push({ mi: h.mi, y: h.y, key, tipo: recTipo(tp && tp[0]), amount });
+    });
+    return out;
+}
+// Junta lo leído de todos los archivos y decide qué hacer con cada mes
+function resolveReceipts(found) {
+    const rows = [], byKey = new Map();
+    for (const r of found) {
+        if (r.bad) { rows.push({ ...r, st: 'bad' }); continue; }
+        if (r.tipo !== 'mensualidad') { rows.push({ ...r, st: 'skip', reason: r.tipo === 'licencia' ? 'Licencia: no cuenta para el aguinaldo' : 'Solo se cargan las mensualidades' }); continue; }
+        const prev = byKey.get(r.key);
+        if (!prev || (!prev.fromPdf && r.fromPdf)) { if (prev) rows.push({ ...prev, st: 'skip', reason: 'Repetido' }); byKey.set(r.key, r); }
+        else rows.push({ ...r, st: 'skip', reason: 'Repetido' });
+    }
+    for (const r of byKey.values()) {
+        const have = getPeriod(r.key).cobroReal;
+        rows.push(have > 0 ? { ...r, st: 'exists', have } : { ...r, st: 'new' });
+    }
+    const order = { new: 0, exists: 1, skip: 2, bad: 3 };
+    return rows.sort((a, b) => order[a.st] - order[b.st] || String(b.key || '').localeCompare(String(a.key || '')));
+}
+let pdfjsPromise = null, ocrPromise = null, ocrWorker = null;
+function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(true);
+    if (!pdfjsPromise) pdfjsPromise = loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js').then(ok => {
+        if (ok && window.pdfjsLib) { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; return true; }
+        pdfjsPromise = null; return false;
+    });
+    return pdfjsPromise;
+}
+function loadTesseract() {
+    if (window.Tesseract) return Promise.resolve(true);
+    if (!ocrPromise) ocrPromise = loadScript('https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js').then(ok => { if (!ok) ocrPromise = null; return ok; });
+    return ocrPromise;
+}
+async function ocrCanvas(canvas) {
+    if (!(await loadTesseract())) throw new Error('offline');
+    if (!ocrWorker) ocrWorker = await window.Tesseract.createWorker('spa');
+    const r = await ocrWorker.recognize(canvas);
+    return r.data.text || '';
+}
+async function imageToCanvas(file, maxSide = 2400) {
+    const url = URL.createObjectURL(file);
+    try {
+        const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+        const k = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        return c;
+    } finally { URL.revokeObjectURL(url); }
+}
+// Arma el texto del PDF renglón por renglón (ordenado por posición), así "Total neto:" queda junto a su monto
+function pdfItemsToText(items) {
+    const rows = [];
+    items.forEach(i => {
+        if (!i.str || !i.str.trim()) return;
+        const x = i.transform[4], y = i.transform[5];
+        let r = rows.find(q => Math.abs(q.y - y) < 3);
+        if (!r) rows.push(r = { y, it: [] });
+        r.it.push({ x, s: i.str.trim() });
+    });
+    rows.sort((a, b) => b.y - a.y);
+    return rows.map(r => r.it.sort((a, b) => a.x - b.x).map(o => o.s).join('   ')).join('\n');
+}
+async function pdfPagesText(file) {
+    if (!(await loadPdfJs())) throw new Error('offline');
+    const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const texts = [];
+    for (let n = 1; n <= Math.min(pdf.numPages, 12); n++) {
+        const page = await pdf.getPage(n);
+        let text = pdfItemsToText((await page.getTextContent()).items);
+        if (text.replace(/\s/g, '').length < 40) { // PDF escaneado: sin texto, se lee como foto
+            const vp = page.getViewport({ scale: 2 });
+            const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+            await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+            text = await ocrCanvas(c);
+        }
+        texts.push(text);
+    }
+    return texts;
+}
+let receiptBusy = false;
+async function importReceipts(files) {
+    if (!files.length || receiptBusy) return;
+    receiptBusy = true;
+    const found = [];
+    try {
+        for (let i = 0; i < files.length; i++) {
+            const f = files[i], isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+            showToast(`Leyendo recibo ${i + 1} de ${files.length}… (la primera vez puede tardar)`, 120000);
+            let texts;
+            try { texts = isPdf ? await pdfPagesText(f) : [await ocrCanvas(await imageToCanvas(f))]; }
+            catch (e) {
+                if (e && e.message === 'offline') { showToast('Sin conexión: hace falta internet para leer los recibos', 3500); return; }
+                console.error(e); found.push({ bad: true, reason: `No se pudo leer ${f.name}` }); continue;
+            }
+            let any = false;
+            texts.forEach(tx => parseReceiptText(tx).forEach(r => { any = true; found.push({ ...r, fromPdf: isPdf }); }));
+            if (!any) found.push({ bad: true, reason: `No encontré ningún recibo en ${f.name}` });
+        }
+    } finally {
+        receiptBusy = false;
+        if (ocrWorker) { try { ocrWorker.terminate(); } catch (_) {} ocrWorker = null; }
+    }
+    showToast('Listo, revisalos', 1200);
+    openReceiptModal(resolveReceipts(found));
+}
+function openReceiptModal(rows) {
+    const nNew = rows.filter(r => r.st === 'new').length;
+    $('receiptHint').textContent = nNew ? 'Revisá los montos. Lo que ya tenés cargado no se cambia.' : 'No hay nada nuevo para cargar.';
+    $('receiptList').innerHTML = rows.map(r => {
+        const when = r.key ? `${monthName(parseKey(r.key).month)} ${parseKey(r.key).year}` : '';
+        const title = r.mi != null ? `Recibo de ${monthName(r.mi)} ${r.y}` : 'Recibo';
+        if (r.st === 'new') return `<div class="copy-row rc-row" data-key="${r.key}"><input type="checkbox" class="rc-chk" checked /><span class="copy-main">${escapeHtml(title)}<small>Se carga en ${escapeHtml(when)}</small></span><input type="text" inputmode="decimal" class="rc-amt" value="${numToInput(r.amount)}" style="width:112px;height:auto;padding:8px 10px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font:600 14px inherit;font-family:inherit;text-align:right;margin:0;" /></div>`;
+        const why = r.st === 'exists' ? `Ya tenés ${fmtMoney(r.have)} cargado en ${when}. Se deja como está.` : r.reason;
+        return `<div class="copy-row off"><span class="copy-main">${escapeHtml(title)}<small>${escapeHtml(why)}</small></span>${r.amount ? `<span class="copy-amt">${fmtMoney(r.amount)}</span>` : ''}</div>`;
+    }).join('') || '<div class="fin-empty">No encontré nada.</div>';
+    $('receiptSaveBtn').disabled = !nNew; $('receiptSaveBtn').style.opacity = nNew ? '' : '.5';
+    $('receiptModal').style.display = 'flex';
+}
+function closeReceiptModal() { $('receiptModal').style.display = 'none'; }
+function saveReceipts() {
+    snapshot();
+    let n = 0, bad = false;
+    document.querySelectorAll('#receiptList .rc-row').forEach(el => {
+        if (!el.querySelector('.rc-chk').checked) return;
+        const amt = parseNum(el.querySelector('.rc-amt').value);
+        if (!(amt > 0)) { bad = true; return; }
+        const p = ensurePeriod(el.dataset.key);
+        if (p.cobroReal > 0) return; // por las dudas: nunca se pisa un mes ya cargado
+        p.cobroReal = amt; n++;
+    });
+    if (bad) { showToast('Revisá los montos'); return; }
+    if (!n) { showToast('No se cargó ninguno'); return; }
+    saveData(); renderAll(); closeReceiptModal();
+    showUndoToast(n === 1 ? 'Recibo cargado' : `${n} recibos cargados`);
+}
+
+// ============================================================
 //  COPIA EN LA NUBE (opcional): Google + Firestore. Un documento por persona: extras/{uid}
 //  Sin configurar (firebase-config.js vacío) la app funciona igual, solo en este dispositivo.
 // ============================================================
-const CLOUD_TS_KEY = 'hxyo_cloud_ts';        // cuándo cambió por última vez lo de este dispositivo
-const CLOUD_SYNCED_KEY = 'hxyo_cloud_synced'; // versión de la nube con la que quedó igual la última vez
 const FB_VER = '10.13.2';
 const cloud = { ready: false, user: null, db: null, auth: null, status: 'ok', timer: null, busy: false, lastJson: null, backupAt: 0, backupN: 0 };
 const lsNum = k => Number(localStorage.getItem(k)) || 0;
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 function cloudConfigured() { const c = window.MIS_EXTRAS_FIREBASE; return !!(c && c.apiKey && c.projectId && c.appId); }
-function hasLocalData() { const s = data.settings; return data.entries.length > 0 || Object.keys(data.periods).length > 0 || s.rate > 0 || s.base > 0; }
+function hasLocalData() { const s = data.settings; return data.entries.length > 0 || Object.keys(data.periods).length > 0 || data.people.length > 0 || Object.keys(DEFAULT_SETTINGS).some(k => s[k] !== DEFAULT_SETTINGS[k]); }
+function cloudOn() { return !!(cloud.user && cloud.db && cloud.user.uid === activeUid); } // nube lista Y mostrando los datos de esa misma cuenta
+// Carga en pantalla los datos de otra cuenta (o los sueltos, si uid es ''). Lo de cada cuenta queda guardado aparte.
+function loadNamespace(uid) {
+    activeUid = uid || '';
+    try { if (activeUid) localStorage.setItem(ACTIVE_UID_KEY, activeUid); else localStorage.removeItem(ACTIVE_UID_KEY); } catch (_) {}
+    clearTimeout(cloud.timer);
+    cloud.lastJson = null; cloud.backupAt = 0; cloud.backupN = 0; undoSnap = null;
+    data = loadData();
+    applyTheme(data.settings.theme); periodKey = currentKey(); applyProfileToHeader();
+    $('settingsModal').style.display = 'none'; // el formulario de Ajustes tenía valores de la cuenta anterior
+    renderAll();
+}
+// Al entrar con una cuenta: si es la primera vez en este celu y hay datos sueltos (de antes de que existieran las cuentas), pregunta si son de esa persona.
+async function adoptAccount(uid) {
+    if (uid === activeUid) return;
+    if (uid && localStorage.getItem(nsKey(STORAGE_KEY, uid)) === null && activeUid === '') {
+        let raw = null, n = 0;
+        try { raw = localStorage.getItem(STORAGE_KEY); if (raw) { const d = normalizeData(JSON.parse(raw)); n = d.entries.length; if (!n && !Object.keys(d.periods).length) raw = null; } } catch (_) { raw = null; }
+        if (raw) {
+            const mine = await showConfirm({ title: 'Datos guardados en este celu', message: `Hay ${n} extras guardadas acá, de antes de usar cuentas.\n¿Son tuyas? Si no lo son, empezás de cero y no se tocan.`, okText: 'Sí, son mías', cancelText: 'No, empezar de cero' });
+            if (mine) {
+                localStorage.setItem(nsKey(STORAGE_KEY, uid), raw);
+                for (const b of ['hxyo_cloud_ts', 'hxyo_cloud_synced']) { const v = localStorage.getItem(b); if (v !== null) localStorage.setItem(nsKey(b, uid), v); localStorage.removeItem(b); }
+                localStorage.removeItem(STORAGE_KEY);
+            }
+        }
+    }
+    loadNamespace(uid);
+}
 function cloudRef() { return cloud.db.collection('extras').doc(cloud.user.uid); }
 function cloudStatus(s) { cloud.status = s; renderCloud(); }
 function renderCloud() {
@@ -1287,7 +1515,11 @@ async function cloudInit() {
         for (const f of ['app', 'auth', 'firestore', 'messaging']) if (!(await loadScript(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${f}-compat.js`))) throw new Error('sin internet');
         firebase.initializeApp(window.MIS_EXTRAS_FIREBASE);
         cloud.auth = firebase.auth(); cloud.db = firebase.firestore(); cloud.ready = true;
-        cloud.auth.onAuthStateChanged(u => { cloud.user = u; renderCloud(); refreshPushUi(); if (u) { cloudCheck(); syncPushToken(); } });
+        cloud.auth.onAuthStateChanged(async u => {
+            if (!u) { cloud.user = null; renderCloud(); refreshPushUi(); return; } // sin sesión: se sigue viendo lo de este celu, sin sincronizar
+            cloud.user = null; await adoptAccount(u.uid); cloud.user = u;
+            renderCloud(); refreshPushUi(); cloudCheck(); syncPushToken();
+        });
     } catch (e) { console.warn('Nube no disponible', e); }
     renderCloud();
 }
@@ -1303,15 +1535,15 @@ async function cloudButton() {
         }
         return;
     }
-    const ok = await showConfirm({ title: '¿Cerrar sesión?', message: 'Tus datos siguen en este celu y en la nube. Dejan de sincronizarse hasta que vuelvas a entrar.', okText: 'Cerrar sesión', cancelText: 'Volver', warn: true });
-    if (ok) { await cloud.auth.signOut(); renderCloud(); }
+    const ok = await showConfirm({ title: '¿Cerrar sesión?', message: 'Tus datos quedan guardados en la nube. Cuando vuelvas a entrar con tu cuenta los ves de nuevo.', okText: 'Cerrar sesión', cancelText: 'Volver', warn: true });
+    if (ok) { await cloud.auth.signOut(); cloud.user = null; loadNamespace(''); renderCloud(); refreshPushUi(); }
 }
 // Respaldo automático en la nube: guarda la versión anterior (como mucho cada 6 horas)
 // y no la reemplaza si la versión nueva quedó con menos de la mitad de extras (por ejemplo, si borraste todo).
 const BACKUP_EVERY = 6 * 3600 * 1000;
 function entriesIn(json) { try { return (JSON.parse(json).entries || []).length; } catch (_) { return 0; } }
 async function cloudPushNow(prevJson) {
-    let ts = lsNum(CLOUD_TS_KEY); if (!ts) { ts = Date.now(); localStorage.setItem(CLOUD_TS_KEY, String(ts)); }
+    let ts = lsNum(tsKey()); if (!ts) { ts = Date.now(); localStorage.setItem(tsKey(), String(ts)); }
     cloudStatus('syncing');
     const nowJson = JSON.stringify(data);
     const doc = { json: nowJson, ts, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
@@ -1325,11 +1557,11 @@ async function cloudPushNow(prevJson) {
     await withTimeout(cloudRef().set(doc, { merge: true }), 10000);
     if (doc.backup) { cloud.backupAt = doc.backupAt; cloud.backupN = doc.backupN; }
     cloud.lastJson = nowJson;
-    localStorage.setItem(CLOUD_SYNCED_KEY, String(ts));
+    localStorage.setItem(syncedKey(), String(ts));
     cloudStatus('ok');
 }
 function cloudQueuePush() {
-    if (!cloud.user || !cloud.db) return;
+    if (!cloudOn()) return;
     clearTimeout(cloud.timer);
     cloud.timer = setTimeout(async () => {
         if (cloud.busy) { cloudQueuePush(); return; }
@@ -1340,8 +1572,8 @@ function cloudQueuePush() {
 }
 function cloudApply(c) {
     data = normalizeData(JSON.parse(c.json));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    localStorage.setItem(CLOUD_TS_KEY, String(c.ts)); localStorage.setItem(CLOUD_SYNCED_KEY, String(c.ts));
+    localStorage.setItem(dataKey(), JSON.stringify(data));
+    localStorage.setItem(tsKey(), String(c.ts)); localStorage.setItem(syncedKey(), String(c.ts));
     applyTheme(data.settings.theme); periodKey = currentKey(); applyProfileToHeader(); renderAll();
 }
 async function cloudRestoreBackup() {
@@ -1368,12 +1600,12 @@ async function cloudRestoreBackup() {
     showUndoToast('Versión anterior recuperada');
 }
 async function cloudCheck() {
-    if (!cloud.user || !cloud.db || cloud.busy) return;
+    if (!cloudOn() || cloud.busy) return;
     cloud.busy = true; cloudStatus('syncing');
     cloud.lastJson = null; cloud.backupAt = 0; cloud.backupN = 0;
     try {
         const snap = await withTimeout(cloudRef().get({ source: 'server' }), 10000);
-        const ts = lsNum(CLOUD_TS_KEY), sy = lsNum(CLOUD_SYNCED_KEY);
+        const ts = lsNum(tsKey()), sy = lsNum(syncedKey());
         const dirty = ts > sy || (sy === 0 && hasLocalData());
         if (!snap.exists) { if (hasLocalData()) await cloudPushNow(); else cloudStatus('ok'); return; }
         const c = snap.data();
@@ -1646,6 +1878,10 @@ function init() {
     $('backupBtn').addEventListener('click', backupNow);
     $('restoreBtn').addEventListener('click', () => $('restoreFile').click());
     $('restoreFile').addEventListener('change', ev => { restoreFromFile(ev.target.files[0]); ev.target.value = ''; });
+    $('receiptsBtn').addEventListener('click', () => $('receiptFile').click());
+    $('receiptFile').addEventListener('change', ev => { const fs = [...ev.target.files]; ev.target.value = ''; importReceipts(fs); });
+    $('receiptCancelBtn').addEventListener('click', closeReceiptModal);
+    $('receiptSaveBtn').addEventListener('click', saveReceipts);
     $('wipeBtn').addEventListener('click', wipeAll);
 
     // Deshacer + nube
