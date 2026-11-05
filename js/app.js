@@ -977,9 +977,9 @@ async function downloadFile(filename, content, mime) {
 function exportCsv() {
     const c = calc(periodKey), { year, month } = parseKey(periodKey), t = exportTable(c);
     const num = n => String(n).replace('.', ',');
-    const rows = [[t.title], ['DIA', 'DESDE', 'HASTA', 'CANTIDAD', 'VALOR EN $', '¿LAS HICE?']];
-    t.rows.forEach(r => rows.push([r.dia, r.desde, r.hasta, num(r.cant), num(r.valor), r.hecha ? 'SÍ' : 'NO']));
-    rows.push(['TOTAL', '', '', num(t.totalHoras), num(t.totalValor), '']);
+    const rows = [[t.title], ['DIA', 'DESDE', 'HASTA', 'CANTIDAD', '¿LAS HICE?']];
+    t.rows.forEach(r => rows.push([r.dia, r.desde, r.hasta, num(r.cant), r.hecha ? 'SÍ' : 'NO']));
+    rows.push(['TOTAL', '', '', num(t.totalHoras), '']);
     const csv = '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
     downloadFile(`extras-${year}-${String(month + 1).padStart(2, '0')}.csv`, csv, 'text/csv;charset=utf-8');
 }
@@ -995,8 +995,8 @@ function exportTable(c) {
     const { month } = parseKey(c.key);
     return {
         title: `A COBRAR EN ${monthName(month).toUpperCase()}`,
-        rows: c.list.map(e => ({ dia: expDM(e.date), desde: e.start, hasta: e.end, cant: r2(entryHours(e)), valor: r2(entryHours(e) * c.rate), hecha: !!e.done })),
-        totalHoras: r2(c.hoursAll), totalValor: r2(c.hoursAll * c.rate)
+        rows: c.list.map(e => ({ dia: expDM(e.date), desde: e.start, hasta: e.end, cant: r2(entryHours(e)), hecha: !!e.done })),
+        totalHoras: r2(c.hoursAll)
     };
 }
 let exljsPromise = null;
@@ -1008,7 +1008,7 @@ function loadExcelJs() {
 function buildSheet(wb, c) {
     const t = exportTable(c), { year, month } = parseKey(c.key);
     const ws = wb.addWorksheet(`${monthName(month)} ${year}`.slice(0, 31), { views: [{ showGridLines: false }] });
-    ws.columns = [{ width: 13 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 17 }, { width: 14 }];
+    ws.columns = [{ width: 13 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }];
     ws.pageSetup = { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
     const thin = { style: 'thin', color: { argb: 'FF595959' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
     const fill = rgb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + rgb } });
@@ -1034,11 +1034,11 @@ function buildSheet(wb, c) {
         });
     };
     const B = EXP_BLUE, G = EXP_GRAY;
-    addRow([[t.title, EXP_TITLE, null, 6]], 25);
-    addRow([['DIA', B], ['DESDE', B], ['HASTA', B], ['CANTIDAD', B], ['VALOR EN $', B], ['¿LAS HICE?', B]], 22);
-    t.rows.forEach(r => addRow([[r.dia, B], [r.desde, G], [r.hasta, G], [r.cant, G], [r.valor, G, money], [r.hecha ? '☑' : '☐', r.hecha ? B : G]]));
-    for (let i = t.rows.length; i < EXP_ROWS; i++) addRow([['', B], ['', G], ['', G], ['', G], ['', G], ['☐', G]]);
-    addRow([['TOTAL', B], ['', B, null, 2], [t.totalHoras, EXP_PINK], [t.totalValor, EXP_GREEN, money, 2]], 22);
+    addRow([[t.title, EXP_TITLE, null, 5]], 25);
+    addRow([['DIA', B], ['DESDE', B], ['HASTA', B], ['CANTIDAD', B], ['¿LAS HICE?', B]], 22);
+    t.rows.forEach(r => addRow([[r.dia, B], [r.desde, G], [r.hasta, G], [r.cant, G], [r.hecha ? '☑' : '☐', r.hecha ? B : G]]));
+    for (let i = t.rows.length; i < EXP_ROWS; i++) addRow([['', B], ['', G], ['', G], ['', G], ['☐', G]]);
+    addRow([['TOTAL', B], ['', B, null, 2], [t.totalHoras, EXP_PINK], ['', B]], 22);
     return ws;
 }
 async function exportXlsx() {
@@ -1222,20 +1222,19 @@ async function loadHtml2pdf() {
 function pdfHtml(c) {
     const t = exportTable(c), E = escapeHtml;
     const bd = 'border:1px solid #595959;';
-    const pm = n => '$' + n.toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const td = (inner, bg, extra) => `<td style="${bd}background:#${bg};text-align:center;vertical-align:middle;height:29px;padding:0 4px;font-weight:700;font-size:14px;${extra || ''}">${inner}</td>`;
     const box = on => on
         ? `<div style="width:18px;height:18px;margin:0 auto;border-radius:3px;background:#3F6FB5;position:relative;"><div style="position:absolute;left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);"></div></div>`
         : `<div style="width:18px;height:18px;margin:0 auto;border-radius:3px;border:2px solid #777;background:#fff;box-sizing:border-box;"></div>`;
-    const head = ['DIA', 'DESDE', 'HASTA', 'CANTIDAD', 'VALOR EN $', '¿LAS HICE?'].map(h => td(h, EXP_BLUE, 'height:30px;')).join('');
-    const rows = t.rows.map(r => `<tr style="page-break-inside:avoid;">${td(r.dia, EXP_BLUE)}${td(E(r.desde), EXP_GRAY)}${td(E(r.hasta), EXP_GRAY)}${td(fmtHours(r.cant), EXP_GRAY)}${td(pm(r.valor), EXP_GRAY)}${td(box(r.hecha), r.hecha ? EXP_BLUE : EXP_GRAY)}</tr>`).join('');
+    const head = ['DIA', 'DESDE', 'HASTA', 'CANTIDAD', '¿LAS HICE?'].map(h => td(h, EXP_BLUE, 'height:30px;')).join('');
+    const rows = t.rows.map(r => `<tr style="page-break-inside:avoid;">${td(r.dia, EXP_BLUE)}${td(E(r.desde), EXP_GRAY)}${td(E(r.hasta), EXP_GRAY)}${td(fmtHours(r.cant), EXP_GRAY)}${td(box(r.hecha), r.hecha ? EXP_BLUE : EXP_GRAY)}</tr>`).join('');
     let blanks = '';
-    for (let i = t.rows.length; i < EXP_ROWS; i++) blanks += `<tr style="page-break-inside:avoid;">${td('', EXP_BLUE)}${td('', EXP_GRAY)}${td('', EXP_GRAY)}${td('', EXP_GRAY)}${td('', EXP_GRAY)}${td(box(false), EXP_GRAY)}</tr>`;
-    const total = `<tr style="page-break-inside:avoid;">${td('TOTAL', EXP_BLUE)}<td colspan="2" style="${bd}background:#${EXP_BLUE};"></td>${td(fmtHours(t.totalHoras), EXP_PINK)}<td colspan="2" style="${bd}background:#${EXP_GREEN};text-align:center;vertical-align:middle;height:29px;font-weight:700;font-size:14px;">${pm(t.totalValor)}</td></tr>`;
+    for (let i = t.rows.length; i < EXP_ROWS; i++) blanks += `<tr style="page-break-inside:avoid;">${td('', EXP_BLUE)}${td('', EXP_GRAY)}${td('', EXP_GRAY)}${td('', EXP_GRAY)}${td(box(false), EXP_GRAY)}</tr>`;
+    const total = `<tr style="page-break-inside:avoid;">${td('TOTAL', EXP_BLUE)}<td colspan="2" style="${bd}background:#${EXP_BLUE};"></td>${td(fmtHours(t.totalHoras), EXP_PINK)}<td style="${bd}background:#${EXP_BLUE};"></td></tr>`;
     return `<div style="font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;">
         <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
-            <colgroup><col style="width:14%"><col style="width:16%"><col style="width:16%"><col style="width:17%"><col style="width:21%"><col style="width:16%"></colgroup>
-            <tr><td colspan="6" style="${bd}background:#${EXP_TITLE};text-align:center;vertical-align:middle;height:34px;font-weight:700;font-size:20px;">${E(t.title)}</td></tr>
+            <colgroup><col style="width:18%"><col style="width:20%"><col style="width:20%"><col style="width:22%"><col style="width:20%"></colgroup>
+            <tr><td colspan="5" style="${bd}background:#${EXP_TITLE};text-align:center;vertical-align:middle;height:34px;font-weight:700;font-size:20px;">${E(t.title)}</td></tr>
             <tr>${head}</tr>${rows}${blanks}${total}
         </table></div>`;
 }
