@@ -16,8 +16,7 @@ const DEFAULT_SETTINGS = {
     nightRate: 35.99, // valor de cada hora nocturna
     weekendRate: 41.69, // valor de cada hora de fin de semana
     goal: 40,       // objetivo de horas por período
-    min: 30,        // mínimo de horas por período
-    workStart: ''   // 'AAAA-MM': primer mes de cobro (el aguinaldo no cuenta meses anteriores)
+    min: 30         // mínimo de horas por período
 };
 const FROZEN_FIELDS = ['rate', 'base', 'nightRate', 'weekendRate'];
 // Un período solo conserva sus valores propios si ya apretaste "Ya cobré el sueldo"; si no, vale lo de Ajustes.
@@ -724,7 +723,7 @@ function renderMoney() {
         <div class="card-head"><h3>Cuentas con personas</h3><button class="mini-btn primary" data-act="item-add" data-kind="ppl"><i class="fas fa-plus"></i> Agregar</button></div>
         ${data.people.length ? data.people.map(x => `<div class="fin-item"><span class="fin-name">${escapeHtml(x.name || 'Sin nombre')} <small>${x.amount < 0 ? 'se lo debo' : 'me debe'}</small></span><span class="fin-amt">${fmtMoney(Math.abs(x.amount))}</span>
             <button class="sd-btn sd-edit" data-act="item-edit" data-kind="ppl" data-id="${x.id}" aria-label="Editar"><i class="fas fa-pen"></i></button>
-            <button class="sd-btn sd-delete" data-act="item-del" data-kind="ppl" data-id="${x.id}" aria-label="Eliminar"><i class="fas fa-trash-alt"></i></button></div>`).join('') : `<div class="fin-empty">Nadie te debe ni le debés. Ej: Pilar · 16593</div>`}
+            <button class="sd-btn sd-delete" data-act="item-del" data-kind="ppl" data-id="${x.id}" aria-label="Eliminar"><i class="fas fa-trash-alt"></i></button></div>`).join('') : `<div class="fin-empty">Nadie te debe ni le debés. Ej: Juan · 1500</div>`}
         ${data.people.length ? `<div class="fin-total"><span>${pnet < 0 ? 'En total debés' : 'En total te deben'}</span><span>${fmtMoney(Math.abs(pnet))}</span></div>` : ''}
     </div>`;
     const more = `<details class="more-details" id="moreDetails" ${moneyMoreOpen ? 'open' : ''}><summary>Más detalle <small>cuotas, aguinaldo, cuentas con personas</small></summary>
@@ -1118,7 +1117,7 @@ function applyProfileToHeader() {
     applyTheme(s.theme);
     const name = (s.name || '').trim();
     $('headerTitle').textContent = name || 'Mis extras';
-    $('headerSubtitle').textContent = name ? 'HORAX · mis extras' : 'HORAX · lo mío';
+    $('headerSubtitle').textContent = name ? 'HORAX · mis extras' : 'Tocá para poner tu nombre';
     const ini = name ? name.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() : '';
     $('profileIcon').innerHTML = ini ? escapeHtml(ini) : '<i class="fas fa-clock"></i>';
 }
@@ -1518,23 +1517,29 @@ async function cloudInit() {
         cloud.auth.onAuthStateChanged(async u => {
             if (!u) { cloud.user = null; renderCloud(); refreshPushUi(); return; } // sin sesión: se sigue viendo lo de este celu, sin sincronizar
             cloud.user = null; await adoptAccount(u.uid); cloud.user = u;
-            renderCloud(); refreshPushUi(); cloudCheck(); syncPushToken();
+            renderCloud(); refreshPushUi();
+            const checked = cloudCheck(); syncPushToken();
+            if (isWelcomeOpen()) welcomeAfterLogin(checked); else maybeShowPushPrompt();
         });
     } catch (e) { console.warn('Nube no disponible', e); }
     renderCloud();
 }
+// Abre el selector de cuentas de Google (siempre pregunta cuál, así sirve también si comparten el celu)
+async function googleSignIn() {
+    if (!cloudConfigured()) { showToast('Primero hay que configurar Firebase', 3000); return; }
+    if (!cloud.ready) { showToast('Todavía cargando, probá en un momento'); return; }
+    const p = new firebase.auth.GoogleAuthProvider();
+    p.setCustomParameters({ prompt: 'select_account' });
+    try { await cloud.auth.signInWithPopup(p); }
+    catch (e) {
+        if (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment') { try { await cloud.auth.signInWithRedirect(p); } catch (_) {} }
+        else if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') showToast('No se pudo entrar: ' + (e.code || 'error'), 3500);
+    }
+}
 async function cloudButton() {
     if (!cloudConfigured()) { showToast('Primero hay que configurar Firebase', 3000); return; }
     if (!cloud.ready) { showToast('Todavía cargando, probá en un momento'); return; }
-    if (!cloud.user) {
-        const p = new firebase.auth.GoogleAuthProvider();
-        try { await cloud.auth.signInWithPopup(p); }
-        catch (e) {
-            if (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment') { try { await cloud.auth.signInWithRedirect(p); } catch (_) {} }
-            else if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') showToast('No se pudo entrar: ' + (e.code || 'error'), 3500);
-        }
-        return;
-    }
+    if (!cloud.user) { await googleSignIn(); return; }
     const ok = await showConfirm({ title: '¿Cerrar sesión?', message: 'Tus datos quedan guardados en la nube. Cuando vuelvas a entrar con tu cuenta los ves de nuevo.', okText: 'Cerrar sesión', cancelText: 'Volver', warn: true });
     if (ok) { await cloud.auth.signOut(); cloud.user = null; loadNamespace(''); renderCloud(); refreshPushUi(); }
 }
@@ -1695,55 +1700,292 @@ function refreshPushUi() {
 }
 
 // ============================================================
-//  INSTALAR LA APP
+//  INSTALAR LA APP (tutorial paso a paso, un paso por pantalla)
 // ============================================================
-let installOS = 'ios';
+const APP_NAME = 'Mis extras';
+let installOS = 'ios', installIOSVer = '26', installIdx = 0;
 let deferredInstall = null;
-function isStandalone() { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
+function isStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true ||
+        (document.referrer && document.referrer.startsWith('android-app://'));
+}
 function detectPlatform() {
     const ua = navigator.userAgent || '';
     if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
     if (/Android/i.test(ua)) return 'android';
     return 'desktop';
 }
-const INSTALL_STEPS = {
-    ios: {
-        steps: ['Abrí esta página en <b>Safari</b>.', 'Tocá el botón <b>Compartir</b> (el cuadrado con la flecha hacia arriba).', 'Bajá en el menú y tocá <b>Agregar a pantalla de inicio</b>.', 'Tocá <b>Agregar</b>. Listo: queda un ícono en tu celu.'],
-        note: 'En iPhone solo se puede instalar desde Safari, no desde Chrome.'
-    },
-    android: {
-        steps: ['Abrí esta página en <b>Chrome</b>.', 'Tocá los <b>tres puntitos</b> de arriba a la derecha.', 'Tocá <b>Instalar app</b> o <b>Agregar a la pantalla principal</b>.', 'Confirmá con <b>Instalar</b>.'],
-        note: 'Si ves el botón “Instalar ahora”, podés usarlo directamente.'
-    },
-    desktop: {
-        steps: ['Abrí esta página en <b>Chrome</b> o <b>Edge</b>.', 'Buscá el ícono de instalar a la derecha de la barra de direcciones.', 'Hacé clic en <b>Instalar</b>.'],
-        note: 'También sirve guardarla como favorito y usarla desde el navegador.'
-    }
+// Íconos dibujados (no dependen de Font Awesome)
+const IC = {
+    share: '<path d="M12 14V3m0 0L8 7m4-4 4 4M8 10H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1"/>',
+    dots: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+    dotsV: '<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>',
+    plus: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/>',
+    down: '<path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/>',
+    book: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/>',
+    tabs: '<rect x="4" y="7" width="13" height="13" rx="2"/><path d="M8 4h11a1 1 0 0 1 1 1v11"/>',
+    back: '<path d="m15 5-7 7 7 7"/>', fwd: '<path d="m9 5 7 7-7 7"/>'
 };
-function renderInstall() {
-    document.querySelectorAll('#installTabs .install-tab').forEach(b => b.classList.toggle('active', b.dataset.os === installOS));
-    const info = INSTALL_STEPS[installOS];
-    $('installSteps').innerHTML = info.steps.map(s => `<li>${s}</li>`).join('');
-    $('installNote').textContent = info.note;
-    $('installNowBtn').style.display = deferredInstall ? 'flex' : 'none';
+const ic = n => `<svg class="sc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${IC[n]}</svg>`;
+// Piezas para dibujar las pantallas del celu
+const scBrand = name => `<div class="sc-brand">${name}</div>`;
+const scBar = icon => `<div class="sc-bar"><span class="sc-url">🔒 ${escapeHtml(location.hostname || 'tu-app')}</span><span class="hl-wrap"><span class="sc-btn">${ic(icon)}</span></span></div>`;
+const scTabbar = () => `<div class="sc-tabbar"><span class="sc-btn dim">${ic('back')}</span><span class="sc-btn dim">${ic('fwd')}</span><span class="hl-wrap"><span class="sc-btn">${ic('share')}</span></span><span class="sc-btn dim">${ic('book')}</span><span class="sc-btn dim">${ic('tabs')}</span></div>`;
+const skel = w => `<div class="sc-row skel"><span style="width:${w}%"></span></div>`;
+const scList = rows => `<div class="sc-list">${rows.join('')}</div>`;
+const scRow = (icon, label, h) => `<div class="sc-row${h ? ' hl' : ''}"><span>${label}</span>${ic(icon)}</div>`;
+const scDialog = btn => `<div class="sc-dialog"><div class="sc-dhead"><span>Cancelar</span><b>Agregar a inicio</b><span class="sc-primary hl">${btn}</span></div><div class="sc-field"><span class="sc-appicon">M</span><span>${APP_NAME}</span></div><div class="sc-row"><span>Abrir como app web</span><span class="sc-switch"></span></div></div>`;
+const scHome = () => `<div class="sc-home"><img class="sc-homeimg" src="./icons/icon-192.png" alt=""><span>${APP_NAME}</span></div>`;
+const scInstallDlg = () => `<div class="sc-dialog"><div class="sc-field"><span class="sc-appicon">M</span><span>Instalar ${APP_NAME}</span></div><div class="sc-dfoot"><span>Cancelar</span><span class="sc-primary hl">Instalar</span></div></div>`;
+const IOS_SHARE_SHEET = () => scList([skel(60), skel(75), scRow('plus', 'Agregar a pantalla de inicio', true), skel(50)]);
+const IOS_OPEN = { t: 'Abrí el link de la app en <b>Safari</b>.<br><small>Si llegaste desde WhatsApp, tocá <b>Abrir en Safari</b>.</small>', s: () => scBrand('Safari') };
+const IOS_ADD = [
+    { t: 'Tocá <b>Agregar a Inicio</b> (o <b>Agregar a pantalla de inicio</b>).<br><small>No la confundas con "Agregar marcador". Si no la ves, tocá <b>Ver más</b> o deslizá la lista hacia arriba.</small>', s: IOS_SHARE_SHEET },
+    { t: 'Dejá activado <b>Abrir como app web</b> y tocá <b>Agregar</b>, arriba a la derecha.<br><small>Si no ves ese interruptor, no pasa nada.</small>', s: () => scDialog('Agregar') },
+    { t: `¡Listo! Abrí ${APP_NAME} desde el <b>ícono nuevo</b> de tu pantalla de inicio, no desde Safari.`, s: scHome }
+];
+const INSTALL_STEPS = {
+    ios26: [
+        IOS_OPEN,
+        { t: 'Tocá los <b>tres puntitos</b>, a la derecha de la barra de direcciones.', s: () => scBar('dots') },
+        { t: 'Tocá <b>Compartir</b>. Es la primera opción del menú.', s: () => scList([skel(55), scRow('share', 'Compartir', true), skel(70)]) },
+        ...IOS_ADD
+    ],
+    ios18: [
+        IOS_OPEN,
+        { t: 'Tocá el botón <b>Compartir</b> (un cuadradito con una flecha hacia arriba), abajo en el centro.', s: scTabbar },
+        ...IOS_ADD
+    ],
+    android: [
+        { t: `Abrí el link de ${APP_NAME} en <b>Chrome</b>.`, s: () => scBrand('Chrome') },
+        { t: 'Tocá los <b>tres puntitos</b> arriba a la derecha.', s: () => scBar('dotsV') },
+        { t: 'Tocá <b>Instalar app</b> (o <b>Agregar a la pantalla principal</b>).<br><small>Si te deja elegir, tocá <b>Instalar</b>, no "acceso directo".</small>', s: () => scList([skel(60), scRow('down', 'Instalar app', true), skel(70)]) },
+        { t: 'Confirmá tocando <b>Instalar</b>.', s: scInstallDlg },
+        { t: `¡Listo! ${APP_NAME} queda en tu pantalla de inicio, como cualquier app.`, s: scHome }
+    ],
+    desktop: [
+        { t: `Abrí ${APP_NAME} en <b>Chrome</b> o <b>Edge</b>.`, s: () => scBrand('Chrome · Edge') },
+        { t: 'A la derecha de la barra de direcciones, hacé clic en el <b>ícono de instalar</b>.<br><small>Si no aparece: menú ⋮ → <b>Guardar y compartir</b> → <b>Instalar página como app</b>. En Edge: menú ⋯ → <b>Aplicaciones</b> → <b>Instalar este sitio como aplicación</b>.</small>', s: () => scBar('down') },
+        { t: 'Confirmá con <b>Instalar</b>.', s: scInstallDlg },
+        { t: '¡Listo! Se abre en su propia ventana, como cualquier programa.', s: scHome }
+    ]
+};
+const INSTALL_NOTES = {
+    ios: '<b>Avisos:</b> solo llegan si abrís la app desde el ícono nuevo (necesita iOS 16.4 o más nuevo). Si tu iPhone es de los últimos, usá la opción "iOS 26".',
+    android: '¿Samsung Internet? Menú ☰ → <b>Agregar página a</b> → <b>Pantalla de inicio</b>. ¿Firefox? Menú ⋮ → <b>Instalar</b>.',
+    desktop: '<b>Safari en Mac:</b> menú Archivo → <b>Agregar al Dock</b>. Firefox en compu no permite instalar apps.'
+};
+const INSTALL_HEAD = {
+    ios: { banner: `Instalá ${APP_NAME} en tu iPhone`, sub: 'Desde Safari, en menos de un minuto. Así también te llegan los avisos.', modal: 'Instalar en tu iPhone (Safari)' },
+    android: { banner: `Instalá ${APP_NAME} en tu Android`, sub: 'Un toque y queda en tu pantalla de inicio.', modal: 'Instalar en tu Android (Chrome)' },
+    desktop: { banner: `Instalá ${APP_NAME} en tu compu`, sub: 'Se abre en su propia ventana, sin buscarla en el navegador.', modal: 'Instalar en tu compu (Chrome o Edge)' }
+};
+function currentInstallKey() { return installOS === 'ios' ? 'ios' + installIOSVer : installOS; }
+function renderInstall(dir) {
+    const steps = INSTALL_STEPS[currentInstallKey()], st = steps[installIdx];
+    $('installStage').innerHTML = st.s();
+    $('installText').innerHTML = st.t;
+    $('installDots').innerHTML = steps.map((_, i) => `<i class="${i === installIdx ? 'on' : (i < installIdx ? 'past' : '')}"></i>`).join('');
+    $('installPrev').style.visibility = installIdx === 0 ? 'hidden' : 'visible';
+    $('installNext').textContent = installIdx === steps.length - 1 ? 'Cerrar' : 'Siguiente';
+    $('installCounter').textContent = `Paso ${installIdx + 1} de ${steps.length}`;
+    const sl = $('installSlide');
+    if (dir) { sl.classList.remove('slide-in-r', 'slide-in-l'); void sl.offsetWidth; sl.classList.add(dir > 0 ? 'slide-in-r' : 'slide-in-l'); }
+}
+function installGo(delta) {
+    const n = INSTALL_STEPS[currentInstallKey()].length, ni = installIdx + delta;
+    if (ni < 0 || ni >= n) return;
+    installIdx = ni; renderInstall(delta);
+}
+function setInstallOS(os) {
+    installOS = os; installIdx = 0;
+    document.querySelectorAll('#installTabs .install-tab').forEach(t => t.classList.toggle('active', t.dataset.os === os));
+    const sub = $('installSub');
+    sub.style.display = os === 'ios' ? 'flex' : 'none';
+    sub.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.ver === installIOSVer));
+    $('installNote').innerHTML = INSTALL_NOTES[os] || '';
+    const ua = navigator.userAgent || '', here = detectPlatform() === os, warn = $('installWarn');
+    let w = '';
+    if (here && /FBAN|FBAV|Instagram|TikTok|Snapchat|Line\/|Twitter|GSA\//.test(ua)) w = 'Estás dentro de otra app. Abrí este link en <b>' + (os === 'ios' ? 'Safari' : 'Chrome') + '</b> para poder instalarla.';
+    else if (here && os === 'ios' && /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua)) w = 'Este no es Safari. Para que se instale bien y lleguen los avisos, abrí el link en <b>Safari</b>.';
+    warn.innerHTML = w; warn.style.display = w ? 'block' : 'none';
+    const h = INSTALL_HEAD[os]; if (h) $('installTitle').textContent = h.modal;
+    renderInstall(); refreshInstallUI();
+}
+function refreshInstallUI() {
+    const nowBtn = $('installNowBtn');
+    if (nowBtn) nowBtn.style.display = (deferredInstall && installOS === detectPlatform() && installOS !== 'ios') ? 'flex' : 'none';
+    const b = $('installBannerBtn'); if (b) b.textContent = deferredInstall ? 'Instalar' : 'Ver cómo';
+    const hb = $('openInstallHelpBtn');
+    if (hb) {
+        hb.style.display = isStandalone() ? 'none' : ''; // ya la tiene instalada: no hace falta mostrar cómo
+        const t = hb.querySelector('.pf-row-title');
+        if (t) t.textContent = deferredInstall ? 'Instalar la app ahora' : '¿Cómo instalar la app?';
+    }
+}
+// Manda el link de la app (WhatsApp, mensajes, mail…) para que un compañero la instale
+async function shareAppLink() {
+    const url = new URL('./', location.href).href; // link limpio, sin # ni ?
+    const msg = { title: APP_NAME, text: `Mirá esta app para llevar la cuenta de tus horas extras y lo que vas a cobrar (${APP_NAME}):`, url };
+    if (navigator.share) {
+        try { await navigator.share(msg); return; }
+        catch (err) { if (err && err.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(url); showToast('Link copiado. Pegalo en WhatsApp', 3500); }
+    catch (_) { window.prompt('Copiá este link y mandalo:', url); }
+}
+async function triggerNativeInstall() {
+    const ev = deferredInstall; if (!ev) return;
+    deferredInstall = null;
+    try { ev.prompt(); const c = await ev.userChoice; if (c && c.outcome === 'accepted') { try { localStorage.setItem(INSTALL_KEY, '1'); } catch (_) {} hideInstallBanner(); } }
+    catch (err) { console.warn('Instalador nativo no disponible', err); }
+    refreshInstallUI();
 }
 function openInstallModal() {
-    installOS = detectPlatform();
-    renderInstall();
+    setInstallOS(detectPlatform());
+    const s = $('installStatus');
+    s.style.display = isStandalone() ? 'block' : 'none';
+    if (isStandalone()) s.textContent = `Ya estás usando ${APP_NAME} como app. Esto sirve para instalarla en otro dispositivo.`;
     $('installModal').style.display = 'flex';
 }
 function closeInstallModal() { $('installModal').style.display = 'none'; }
+function showInstallBanner() {
+    const h = INSTALL_HEAD[detectPlatform()];
+    $('installBanner').querySelector('strong').textContent = h.banner;
+    $('installBanner').querySelector('small').textContent = h.sub;
+    refreshInstallUI();
+    $('installBanner').style.display = 'flex';
+}
+function hideInstallBanner() { $('installBanner').style.display = 'none'; }
 function maybeShowInstallBanner() {
     if (isStandalone()) return;
     try { if (localStorage.getItem(INSTALL_KEY)) return; } catch (_) {}
-    setTimeout(() => { if (!isStandalone()) $('installBanner').style.display = 'flex'; }, 2500);
+    setTimeout(() => { if (!isStandalone() && !isWelcomeOpen()) showInstallBanner(); }, 2500);
 }
 function dismissInstallBanner() {
-    $('installBanner').style.display = 'none';
+    hideInstallBanner();
     try { localStorage.setItem(INSTALL_KEY, '1'); } catch (_) {}
 }
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; });
-window.addEventListener('appinstalled', () => { deferredInstall = null; dismissInstallBanner(); closeInstallModal(); });
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; refreshInstallUI(); });
+window.addEventListener('appinstalled', () => { deferredInstall = null; dismissInstallBanner(); closeInstallModal(); showToast(`¡${APP_NAME} instalada! Abrila desde el ícono`, 4500); });
+
+// Con la app instalada y sesión iniciada: si los avisos no están activados, se ofrece activarlos.
+// El permiso del navegador solo se puede pedir desde un toque (iPhone lo exige): se pide al tocar "Activar".
+let pushPromptClosed = false;
+function hidePushPrompt() { const b = $('pushPrompt'); if (b) b.remove(); }
+function maybeShowPushPrompt() {
+    if (!isStandalone() || !cloud.user || pushPromptClosed || isWelcomeOpen()) return;
+    setTimeout(() => {
+        if ($('pushPrompt') || pushPromptClosed || !cloud.user || isWelcomeOpen()) return;
+        if (!pushSupported() || !pushConfigured() || getSavedPushToken() || Notification.permission === 'denied') return;
+        const b = document.createElement('div');
+        b.id = 'pushPrompt'; b.className = 'install-banner';
+        b.innerHTML = `<div class="install-banner-icon"><i class="fas fa-bell"></i></div>
+            <div class="install-banner-text"><strong>¿Activamos los avisos?</strong><small>Te avisamos la noche antes y 2 horas antes de cada extra.</small></div>
+            <button class="install-banner-cta" id="pushPromptYes">Activar</button>
+            <button class="install-banner-close" id="pushPromptNo" title="Ahora no"><i class="fas fa-xmark"></i></button>`;
+        document.body.appendChild(b);
+        $('pushPromptYes').addEventListener('click', () => { hidePushPrompt(); enablePush(); });
+        $('pushPromptNo').addEventListener('click', () => { pushPromptClosed = true; hidePushPrompt(); });
+    }, 2500);
+}
+
+// ============================================================
+//  BIENVENIDA (solo la primera vez, para quien arranca de cero)
+// ============================================================
+const WELCOME_KEY = 'hxyo_welcomed';
+let wlStep = 0;
+function isWelcomeOpen() { const m = $('welcomeModal'); return !!m && m.style.display !== 'none'; }
+function markWelcomed() { try { localStorage.setItem(WELCOME_KEY, '1'); } catch (_) {} }
+function maybeShowWelcome() {
+    let seen = false; try { seen = !!localStorage.getItem(WELCOME_KEY); } catch (_) { seen = true; }
+    if (seen) return false;
+    if (hasLocalData()) { markWelcomed(); return false; } // ya usaba la app: no hace falta
+    wlStep = 0; renderWelcome(); $('welcomeModal').style.display = 'flex';
+    return true;
+}
+function closeWelcome() {
+    markWelcomed();
+    $('welcomeModal').style.display = 'none';
+    maybeShowInstallBanner(); maybeShowPushPrompt();
+}
+function wlDots() { return `<div class="wl-dots">${[0, 1, 2].map(i => `<i class="${i === wlStep ? 'on' : ''}"></i>`).join('')}</div>`; }
+function renderWelcome() {
+    const box = $('wlBody'), s = data.settings;
+    if (wlStep === 0) {
+        box.innerHTML = `<h2 id="wlTitle">¡Bienvenido a ${APP_NAME}!</h2>
+            <p class="wl-lead">Llevá la cuenta de tus horas extras y de cuánto vas a cobrar. Lo tuyo es solo tuyo: nadie más lo ve.</p>
+            <ul class="wl-points">
+                <li><i class="fas fa-calendar-check"></i><span>Cargá tus extras<small>Marcá las que ya hiciste y mirá cuánto sumás.</small></span></li>
+                <li><i class="fas fa-wallet"></i><span>Sabé cuánto vas a cobrar<small>Ya vienen cargados los valores de la empresa.</small></span></li>
+                <li><i class="fas fa-bell"></i><span>Recibí avisos<small>La noche anterior y 2 horas antes de cada extra.</small></span></li>
+            </ul>
+            ${wlDots()}
+            ${cloudConfigured() ? `<button type="button" class="btn-google-w" data-wl="google"><i class="fab fa-google"></i> Entrar con Google</button>
+            <p class="field-hint" style="text-align:center;margin:6px 0 0;">Recomendado: guarda tus datos y es lo que permite los avisos.</p>
+            <button type="button" class="wl-skip" data-wl="next">Seguir sin cuenta por ahora</button>` : `<div class="modal-actions"><button class="btn-submit" data-wl="next">Empezar</button></div>`}`;
+    } else if (wlStep === 1) {
+        box.innerHTML = `<h2 id="wlTitle">Tus datos</h2>
+            <p class="wl-lead">Ya están los valores de la empresa. El sueldo base es el líquido (después de descuentos) y puede variar por antigüedad: mirá tu recibo y corregilo si es distinto.</p>
+            <div class="form-group"><label for="wlName">¿Cómo te llamás? <span class="label-opt">(opcional)</span></label>
+                <input type="text" id="wlName" placeholder="Ej: Ana" autocomplete="given-name" autocapitalize="words" value="${escapeHtml(s.name || '')}" /></div>
+            <div class="form-row">
+                <div class="form-group"><label for="wlRate">Valor hora extra ($)</label><input type="text" inputmode="decimal" id="wlRate" value="${numToInput(s.rate)}" /></div>
+                <div class="form-group"><label for="wlBase">Sueldo base líquido ($)</label><input type="text" inputmode="decimal" id="wlBase" value="${numToInput(s.base)}" /></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label for="wlNight">Hora nocturna ($)</label><input type="text" inputmode="decimal" id="wlNight" value="${numToInput(s.nightRate)}" /></div>
+                <div class="form-group"><label for="wlWeekend">Hora fin de semana ($)</label><input type="text" inputmode="decimal" id="wlWeekend" value="${numToInput(s.weekendRate)}" /></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label for="wlGoal">Objetivo (hs por mes)</label><input type="text" inputmode="decimal" id="wlGoal" value="${numToInput(s.goal)}" /></div>
+                <div class="form-group"><label for="wlMin">Mínimo (hs por mes)</label><input type="text" inputmode="decimal" id="wlMin" value="${numToInput(s.min)}" /></div>
+            </div>
+            <p id="wlError" class="login-error" style="display:none;"></p>
+            ${wlDots()}
+            <div class="modal-actions"><button class="btn-submit" data-wl="save">Siguiente</button></div>`;
+    } else {
+        const inApp = isStandalone(), canPush = cloud.user && pushSupported() && pushConfigured();
+        box.innerHTML = `<h2 id="wlTitle">¡Casi listo!</h2>
+            <p class="wl-lead">${cloud.user ? 'Entraste con ' + escapeHtml(cloud.user.email) + '. Tus datos se guardan solos en la nube.' : 'Sin cuenta, tus datos quedan solo en este celu.'}</p>
+            <div class="pf-list" style="margin-bottom:14px;">
+                ${inApp ? '' : `<button type="button" class="pf-row" data-wl="install"><span class="pf-row-ic"><i class="fas fa-mobile-screen-button"></i></span><span class="pf-row-text"><span class="pf-row-title">Instalar la app</span><small class="pf-row-sub">Queda en tu pantalla de inicio. En iPhone es necesario para recibir avisos.</small></span><i class="fas fa-chevron-right pf-row-end" aria-hidden="true"></i></button>`}
+                ${cloud.user ? '' : (cloudConfigured() ? `<button type="button" class="pf-row" data-wl="google"><span class="pf-row-ic"><i class="fab fa-google"></i></span><span class="pf-row-text"><span class="pf-row-title">Entrar con Google</span><small class="pf-row-sub">Guarda tus datos y habilita los avisos.</small></span><i class="fas fa-chevron-right pf-row-end" aria-hidden="true"></i></button>` : '')}
+                ${canPush && !pushOn() ? `<button type="button" class="pf-row" data-wl="push"><span class="pf-row-ic"><i class="fas fa-bell"></i></span><span class="pf-row-text"><span class="pf-row-title">Activar avisos</span><small class="pf-row-sub">La noche anterior y 2 horas antes de cada extra.</small></span><i class="fas fa-chevron-right pf-row-end" aria-hidden="true"></i></button>` : ''}
+                ${pushOn() ? `<div class="pf-row"><span class="pf-row-ic"><i class="fas fa-bell"></i></span><span class="pf-row-text"><span class="pf-row-title">Avisos activados</span></span><i class="fas fa-check pf-row-end" aria-hidden="true"></i></div>` : ''}
+            </div>
+            ${wlDots()}
+            <div class="modal-actions"><button class="btn-submit" data-wl="done">Empezar</button></div>`;
+    }
+    if (wlStep > 0) box.insertAdjacentHTML('beforeend', '<button type="button" class="wl-skip" data-wl="skip">Saltar</button>');
+}
+function wlSaveStep() {
+    const v = { rate: parseNum($('wlRate').value), base: parseNum($('wlBase').value), nightRate: parseNum($('wlNight').value), weekendRate: parseNum($('wlWeekend').value), goal: parseNum($('wlGoal').value), min: parseNum($('wlMin').value) };
+    if (Object.values(v).some(x => Number.isNaN(x) || (x != null && x < 0))) {
+        const e = $('wlError'); e.textContent = 'Revisá los números: tienen que ser valores como 333 o 35,99.'; e.style.display = 'block'; return false;
+    }
+    const s = data.settings;
+    s.name = $('wlName').value.trim();
+    s.rate = v.rate || 0; s.base = v.base || 0; s.nightRate = v.nightRate || 0; s.weekendRate = v.weekendRate || 0;
+    s.goal = v.goal == null ? DEFAULT_SETTINGS.goal : v.goal; s.min = v.min == null ? DEFAULT_SETTINGS.min : v.min;
+    saveData(); applyProfileToHeader(); renderAll();
+    return true;
+}
+async function welcomeAction(act) {
+    if (act === 'next') { wlStep = 1; renderWelcome(); }
+    else if (act === 'google') await googleSignIn();
+    else if (act === 'save') { if (wlSaveStep()) { wlStep = 2; renderWelcome(); } }
+    else if (act === 'install') { openInstallModal(); }
+    else if (act === 'push') { await enablePush(); renderWelcome(); }
+    else if (act === 'done' || act === 'skip') closeWelcome();
+}
+// Se llama cuando termina de entrar con Google estando abierta la bienvenida
+async function welcomeAfterLogin(cloudDone) {
+    await cloudDone;
+    if (!isWelcomeOpen()) return;
+    if (hasLocalData()) { closeWelcome(); showToast('¡Hola de nuevo! Cargué tus datos'); return; } // ya tenía cuenta con datos
+    wlStep = Math.max(wlStep, 1); renderWelcome();
+}
 
 // ============================================================
 //  PANTALLAS Y EVENTOS
@@ -1894,20 +2136,32 @@ function init() {
     window.addEventListener('online', cloudCheck);
     cloudInit();
 
-    // Instalar
-    $('openInstallHelpBtn').addEventListener('click', () => { closeSettings(); openInstallModal(); });
-    $('installBannerBtn').addEventListener('click', () => { dismissInstallBanner(); openInstallModal(); });
+    // Instalar y compartir
+    $('openInstallHelpBtn').addEventListener('click', () => { closeSettings(); if (deferredInstall) triggerNativeInstall(); else openInstallModal(); });
+    $('shareAppBtn').addEventListener('click', shareAppLink);
+    $('installBannerBtn').addEventListener('click', () => { dismissInstallBanner(); if (deferredInstall) triggerNativeInstall(); else openInstallModal(); });
     $('installBannerClose').addEventListener('click', dismissInstallBanner);
     $('installCloseBtn').addEventListener('click', closeInstallModal);
-    $('installDoneBtn').addEventListener('click', closeInstallModal);
     $('installModal').addEventListener('click', ev => { if (ev.target.id === 'installModal') closeInstallModal(); });
-    $('installTabs').addEventListener('click', ev => { const b = ev.target.closest('[data-os]'); if (b) { installOS = b.dataset.os; renderInstall(); } });
-    $('installNowBtn').addEventListener('click', async () => {
-        if (!deferredInstall) return;
-        deferredInstall.prompt();
-        try { await deferredInstall.userChoice; } catch (_) {}
-        deferredInstall = null; renderInstall();
-    });
+    $('installTabs').addEventListener('click', ev => { const b = ev.target.closest('[data-os]'); if (b) setInstallOS(b.dataset.os); });
+    $('installSub').addEventListener('click', ev => { const b = ev.target.closest('[data-ver]'); if (b) { installIOSVer = b.dataset.ver; setInstallOS('ios'); } });
+    $('installNowBtn').addEventListener('click', triggerNativeInstall);
+    $('installPrev').addEventListener('click', () => installGo(-1));
+    $('installNext').addEventListener('click', () => { if (installIdx < INSTALL_STEPS[currentInstallKey()].length - 1) installGo(1); else closeInstallModal(); });
+    { // deslizar con el dedo entre pasos: izquierda = siguiente, derecha = anterior
+        const area = $('installBody'); let sx = 0, sy = 0, swiping = false;
+        area.addEventListener('touchstart', e => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; swiping = e.touches.length === 1; }, { passive: true });
+        area.addEventListener('touchend', e => {
+            if (!swiping) return; swiping = false;
+            const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) installGo(dx < 0 ? 1 : -1);
+        }, { passive: true });
+    }
+    refreshInstallUI();
+
+    // Bienvenida
+    $('wlBody').addEventListener('click', ev => { const b = ev.target.closest('[data-wl]'); if (b) welcomeAction(b.dataset.wl); });
+    $('wlBody').addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') { ev.preventDefault(); welcomeAction('save'); } });
 
     // Pedir a Chrome/Safari que no borre los datos de la app
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (_) {}
@@ -1916,7 +2170,7 @@ function init() {
     const hashTab = { '#add': 'tabAdd', '#calendar': 'tabCalendar', '#summary': 'tabSummary', '#money': 'tabMoney' }[location.hash];
     renderAll();
     if (hashTab) switchTab(hashTab);
-    maybeShowInstallBanner();
+    if (!maybeShowWelcome()) maybeShowInstallBanner();
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
