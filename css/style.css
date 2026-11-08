@@ -799,18 +799,89 @@
 .modal-card .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .modal-card .form-row .form-group { min-width: 0; }
 
-/* Instalar la app (versión simple, sin capturas) */
-.install-card { position: relative; max-height: calc(100dvh - 40px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
-.install-card h2 { padding-right: 36px; }
+/* ---- Cómo instalar: tutorial paso a paso (un paso por pantalla) ---- */
+.install-card { position: relative; display: flex; flex-direction: column; height: min(700px, calc(100dvh - 40px)); max-height: none; overflow: hidden; padding-bottom: 16px; }
+.install-card h2 { flex: none; font-size: 16px; padding-right: 36px; margin-bottom: 12px; }
 .install-x { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; border: none; border-radius: 50%; background: var(--bg); color: var(--text-secondary); font-size: 15px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-.install-tabs { display: flex; gap: 6px; margin: 4px 0 14px; }
-.install-tab { flex: 1; padding: 10px 8px; border-radius: 10px; background: var(--bg); border: 1.5px solid var(--border); color: var(--text-secondary); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.install-tabs { display: flex; gap: 6px; margin: 4px 0 14px; flex: none; }
+.install-tab { flex: 1; padding: 10px 8px; border-radius: 10px; background: var(--bg); border: 1.5px solid var(--border); color: var(--text-secondary); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.install-tab i { font-size: 15px; }
+.install-tab:active { transform: scale(0.97); }
 .install-tab.active { background: var(--primary-bg); border-color: var(--primary-ink); color: var(--primary-ink); }
-.install-steps { margin: 0 0 14px; padding-left: 22px; font-size: 14.5px; line-height: 1.6; color: var(--text); }
-.install-steps li { margin-bottom: 6px; }
-.install-note { margin: 0 0 14px; padding: 10px 12px; background: var(--bg); border-radius: 10px; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
-.install-now { width: 100%; margin-bottom: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.install-card .modal-actions .btn-secondary { flex: 1; }
+.install-sub { display: flex; gap: 6px; margin: -4px 0 12px; flex: none; }
+.install-sub button { flex: 1; padding: 7px 6px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--card); color: var(--text-secondary); font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; }
+.install-sub button.active { border-color: var(--primary-ink); color: var(--primary-ink); background: var(--primary-bg); }
+.install-status, .install-warn { border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.45; margin-bottom: 12px; flex: none; }
+.install-status { background: #ECFDF5; color: #047857; }
+.install-warn { background: #FFF7ED; color: #C2410C; }
+.install-now { width: 100%; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; flex: none; }
+.install-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+.install-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.install-counter { font-size: 12px; font-weight: 700; color: var(--primary-ink); text-transform: uppercase; letter-spacing: .04em; }
+.install-dots { display: flex; justify-content: center; gap: 6px; }
+.install-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--border); }
+.install-dots i.past { background: var(--primary-light); }
+.install-dots i.on { width: 20px; border-radius: 4px; background: var(--primary); }
+.install-stage { height: 250px; background: var(--bg); border: 1px solid var(--border); border-radius: 16px; padding: 10px; display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 8px; overflow: hidden; }
+.install-text { font-size: 15px; line-height: 1.5; color: var(--text); min-height: 112px; margin: 12px 0 0; }
+.install-text small { display: block; margin-top: 6px; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+.install-h { display: block; font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+.install-card .modal-actions { flex: none; margin-top: 12px; }
+.install-card .modal-actions .btn-secondary, .install-card .modal-actions .btn-submit { flex: 1; }
+.install-note { margin: 12px 0 0; padding: 10px 12px; background: var(--bg); border-radius: 10px; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.install-note:empty { display: none; }
+/* Dibujos de pantallas del celu */
+.sc-ic { width: 20px; height: 20px; flex-shrink: 0; }
+.sc-brand { align-self: center; padding: 12px 26px; border-radius: 999px; background: var(--card); border: 1.5px solid var(--primary-ink); color: var(--primary-ink); font-weight: 700; font-size: 17px; }
+.sc-bar { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 6px 6px 6px 14px; }
+.sc-url { flex: 1; min-width: 0; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-btn { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; background: var(--bg); color: var(--text); }
+.sc-btn.dim { opacity: .35; }
+.sc-tabbar { display: flex; justify-content: space-around; align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 6px; }
+.sc-list { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.sc-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 14px; font-size: 14px; font-weight: 500; color: var(--text); }
+.sc-list .sc-row + .sc-row { border-top: 1px solid var(--border); }
+.sc-row.skel span { height: 9px; border-radius: 5px; background: var(--border); display: block; }
+.sc-row.hl { background: var(--primary-bg); color: var(--primary-ink); font-weight: 700; animation: installPulseIn 1.6s ease-in-out infinite; }
+.hl-wrap { display: inline-flex; border-radius: 50%; animation: installPulse 1.6s ease-in-out infinite; }
+.sc-dialog { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.sc-dhead { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary); gap: 6px; }
+.sc-dhead b { color: var(--text); font-size: 13px; }
+.sc-dfoot { display: flex; justify-content: flex-end; align-items: center; gap: 14px; font-size: 13px; color: var(--text-secondary); }
+.sc-primary { padding: 6px 12px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-weight: 700; font-size: 13px; }
+.sc-primary.hl { animation: installPulse 1.6s ease-in-out infinite; }
+.sc-field { display: flex; align-items: center; gap: 10px; background: var(--bg); border-radius: 10px; padding: 8px 10px; font-weight: 600; font-size: 14px; color: var(--text); }
+.sc-dialog .sc-row { padding: 6px 4px; }
+.sc-switch { position: relative; width: 42px; height: 25px; border-radius: 999px; background: #34C759; flex-shrink: 0; }
+.sc-switch::after { content: ''; position: absolute; top: 2px; right: 2px; width: 21px; height: 21px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.sc-appicon { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, var(--primary-ink), var(--primary-ink-light)); color: #fff; font-weight: 800; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sc-home { align-self: center; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text); }
+.sc-homeimg { width: 64px; height: 64px; border-radius: 16px; }
+@keyframes installPulse { 0%, 100% { box-shadow: 0 0 0 2px var(--primary-ink), 0 0 0 4px rgba(var(--primary-rgb), .2); } 50% { box-shadow: 0 0 0 2px var(--primary-ink), 0 0 0 9px rgba(var(--primary-rgb), 0); } }
+@keyframes installPulseIn { 0%, 100% { box-shadow: inset 0 0 0 2px var(--primary-ink); } 50% { box-shadow: inset 0 0 0 2px var(--primary-ink), inset 0 0 0 6px rgba(var(--primary-rgb), .15); } }
+#installSlide.slide-in-r { animation: installSlideR .25s ease-out; }
+#installSlide.slide-in-l { animation: installSlideL .25s ease-out; }
+@keyframes installSlideR { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes installSlideL { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .hl-wrap, .sc-primary.hl, .sc-row.hl, #installSlide.slide-in-r, #installSlide.slide-in-l { animation: none; } }
+
+/* ---- Bienvenida (primera vez) ---- */
+.wl-card { max-height: calc(100dvh - 40px); overflow-y: auto; -webkit-overflow-scrolling: touch; text-align: left; }
+.wl-hero { width: 64px; height: 64px; border-radius: 18px; background: linear-gradient(135deg, var(--primary-ink), var(--primary-ink-light)); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 14px; }
+.wl-card h2 { text-align: center; margin-bottom: 6px; }
+.wl-lead { text-align: center; font-size: 14px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 16px; }
+.wl-points { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.wl-points li { display: flex; gap: 12px; align-items: flex-start; font-size: 14px; line-height: 1.4; color: var(--text); }
+.wl-points li i { flex: none; width: 32px; height: 32px; border-radius: 10px; background: var(--primary-bg); color: var(--primary-ink); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.wl-points li small { display: block; color: var(--text-secondary); font-size: 12.5px; margin-top: 1px; }
+.wl-dots { display: flex; justify-content: center; gap: 6px; margin: 0 0 14px; }
+.wl-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--border); }
+.wl-dots i.on { width: 20px; border-radius: 4px; background: var(--primary); }
+.wl-card .modal-actions .btn-secondary, .wl-card .modal-actions .btn-submit { flex: 1; }
+.wl-skip { display: block; margin: 12px auto 0; background: none; border: none; color: var(--text-light); font: 600 13px inherit; font-family: inherit; cursor: pointer; padding: 6px 12px; }
+.btn-google-w { width: 100%; padding: 13px; margin-bottom: 4px; background: var(--card); border: 1.5px solid var(--border); color: var(--text); border-radius: var(--radius-sm); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.btn-google-w i { color: #EA4335; font-size: 17px; }
+.btn-google-w:active { transform: scale(0.97); }
 
 
 /* Período 26 → 25 bien visible */
