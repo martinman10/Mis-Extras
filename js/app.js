@@ -2030,6 +2030,8 @@ function init() {
     $('calendarGrid').addEventListener('click', ev => {
         const cell = ev.target.closest('.day-cell');
         if (!cell || !cell.dataset.date) return;
+        // Tocar de nuevo el día que ya estaba seleccionado abre "Agregar" con esa fecha
+        if (cell.dataset.date === selectedDate && !cell.classList.contains('other-month')) { switchTab('tabAdd'); return; }
         selectedDate = cell.dataset.date;
         if (cell.classList.contains('other-month')) { const d = parseDate(selectedDate); currentYear = d.getFullYear(); currentMonth = d.getMonth(); }
         renderCalendar();
